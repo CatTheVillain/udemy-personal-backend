@@ -1,0 +1,59 @@
+{
+  "name": "udemy-personal-backend",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "start": "node -r ts-node/register src/main.ts",
+    "start:dev": "node --watch -r ts-node/register src/main.ts",
+    "start:prod": "node dist/main.js",
+    "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\" \"scripts/**/*.mjs\" \"*.json\" \"*.mjs\"",
+    "format:check": "prettier --check \"src/**/*.ts\" \"test/**/*.ts\" \"scripts/**/*.mjs\" \"*.json\" \"*.mjs\"",
+    "lint:source": "eslint src test eslint.config.mjs --max-warnings=0",
+    "lint:policy": "node scripts/check-eslint-rules.mjs",
+    "lint": "npm run lint:source && npm run lint:policy",
+    "typecheck": "tsc --noEmit",
+    "test:unit": "jest --runInBand --verbose",
+    "test:e2e": "jest --config test/jest-e2e.json --runInBand --verbose",
+    "build": "tsc -p tsconfig.build.json"
+  },
+  "dependencies": {
+    "@nestjs/common": "11.2.5",
+    "@nestjs/core": "11.2.5",
+    "@nestjs/platform-express": "11.2.5",
+    "@nestjs/swagger": "11.4.7",
+    "class-transformer": "0.5.1",
+    "class-validator": "0.15.1",
+    "reflect-metadata": "0.2.2",
+    "rxjs": "7.8.2"
+  },
+  "devDependencies": {
+    "@types/express": "5.0.6",
+    "@types/jest": "30.0.0",
+    "@types/node": "24.10.0",
+    "@types/supertest": "7.2.1",
+    "@typescript-eslint/eslint-plugin": "8.70.0",
+    "@typescript-eslint/parser": "8.70.0",
+    "eslint": "10.11.0",
+    "jest": "30.2.0",
+    "prettier": "3.9.8",
+    "supertest": "7.1.4",
+    "ts-jest": "29.4.5",
+    "ts-node": "10.9.2",
+    "typescript": "5.9.3"
+  },
+  "overrides": {
+    "multer": "2.4.0"
+  },
+  "jest": {
+    "moduleFileExtensions": [
+      "js",
+      "json",
+      "ts"
+    ],
+    "rootDir": "src",
+    "testRegex": ".*\\.spec\\.ts$",
+    "transform": {
+      "^.+\\.(t|j)s$": "ts-jest"
+    }
+  }
+}
