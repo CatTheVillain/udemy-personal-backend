@@ -1,3 +1,5 @@
+import { STATUS_CODES } from 'node:http';
+
 import { ArgumentsHost, Catch, ExceptionFilter, HttpException, HttpStatus } from '@nestjs/common';
 import { Response } from 'express';
 import createHttpError from 'http-errors';
@@ -100,6 +102,23 @@ function createProblemDetails(exception: unknown, requestId: string): ProblemDet
   const knownProblem = KNOWN_HTTP_PROBLEMS.get(status);
 
   if (knownProblem === undefined) {
+    if (
+      exception instanceof HttpException &&
+      status !== HttpStatus.INTERNAL_SERVER_ERROR &&
+      Number.isInteger(status) &&
+      status >= HttpStatus.BAD_REQUEST &&
+      status <= 599
+    ) {
+      return new ProblemDetailsDto(
+        'about:blank',
+        STATUS_CODES[status] ?? 'HTTP Error',
+        status,
+        'The request could not be completed.',
+        'HTTP_ERROR',
+        requestId,
+      );
+    }
+
     return new ProblemDetailsDto(
       'about:blank',
       'Internal Server Error',

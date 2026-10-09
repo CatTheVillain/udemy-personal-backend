@@ -144,6 +144,22 @@ class HttpFoundationProbeController {
     throw new HttpException(SYNTHETIC_SECRET_MARKERS[0], HttpStatus.CONFLICT);
   }
 
+  @Get('unmapped-405-error')
+  public unmapped405Error(): void {
+    throw new HttpException(
+      { providerBody: SYNTHETIC_SECRET_MARKERS[6] },
+      HttpStatus.METHOD_NOT_ALLOWED,
+    );
+  }
+
+  @Get('unmapped-503-error')
+  public unmapped503Error(): void {
+    throw new HttpException(
+      { providerBody: SYNTHETIC_SECRET_MARKERS[6] },
+      HttpStatus.SERVICE_UNAVAILABLE,
+    );
+  }
+
   @Get('untrusted-status-error')
   public untrustedStatusError(): void {
     const error = Object.assign(new Error(SYNTHETIC_SECRET_MARKERS[0]), {
@@ -337,6 +353,43 @@ describe('Global HTTP foundation (e2e)', () => {
       const bodyText = JSON.stringify(response.body);
       for (const marker of SYNTHETIC_SECRET_MARKERS) {
         expect(bodyText).not.toContain(marker);
+      }
+    }
+  });
+
+  it('AC02 retains explicit unmapped HttpException statuses without exposing their bodies', async () => {
+    const expectedProblems = [
+      {
+        path: '/api/v1/http-foundation-probe/unmapped-405-error',
+        status: HttpStatus.METHOD_NOT_ALLOWED,
+        title: 'Method Not Allowed',
+      },
+      {
+        path: '/api/v1/http-foundation-probe/unmapped-503-error',
+        status: HttpStatus.SERVICE_UNAVAILABLE,
+        title: 'Service Unavailable',
+      },
+    ] as const;
+
+    for (const expectedProblem of expectedProblems) {
+      const response = await request(app.getHttpServer())
+        .get(expectedProblem.path)
+        .expect('Content-Type', /application\/problem\+json/)
+        .expect(expectedProblem.status);
+
+      expect(response.body).toMatchObject({
+        type: 'about:blank',
+        title: expectedProblem.title,
+        status: expectedProblem.status,
+        detail: 'The request could not be completed.',
+        code: 'HTTP_ERROR',
+        requestId: expect.stringMatching(
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+        ),
+      });
+
+      for (const marker of SYNTHETIC_SECRET_MARKERS) {
+        expect(JSON.stringify(response.body)).not.toContain(marker);
       }
     }
   });
