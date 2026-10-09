@@ -6,7 +6,7 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { configureApplication } from '../src/main';
 
-const EXPECTED_HELLO_RESPONSE = { message: 'Hello World!' };
+const EXPECTED_HELLO_RESPONSE = { data: { message: 'Hello World!' } };
 
 describe('Hello public contract (e2e)', () => {
   let app: INestApplication;
@@ -21,7 +21,7 @@ describe('Hello public contract (e2e)', () => {
     await app.close();
   });
 
-  it('C1 serves the exact named HelloResponseDto JSON through GET /api/v1/hello', async () => {
+  it('C1 serves the exact once-wrapped named HelloResponseDto JSON through GET /api/v1/hello', async () => {
     const response = await request(app.getHttpServer())
       .get('/api/v1/hello')
       .expect('Content-Type', /json/)
@@ -34,7 +34,7 @@ describe('Hello public contract (e2e)', () => {
     await request(app.getHttpServer()).get('/hello').expect(404);
   });
 
-  it('C3 publishes the versioned HelloResponseDto 200 schema in OpenAPI', () => {
+  it('C3 publishes the versioned HelloApiResponseDto envelope with the named HelloResponseDto payload', () => {
     const document: OpenAPIObject = SwaggerModule.createDocument(
       app,
       new DocumentBuilder().setTitle('Udemy Personal Backend').build(),
@@ -47,11 +47,12 @@ describe('Hello public contract (e2e)', () => {
       '200': {
         content: {
           'application/json': {
-            schema: { $ref: '#/components/schemas/HelloResponseDto' },
+            schema: { $ref: '#/components/schemas/HelloApiResponseDto' },
           },
         },
       },
     });
+    expect(document.components?.schemas).toHaveProperty('HelloApiResponseDto');
     expect(document.components?.schemas).toHaveProperty('HelloResponseDto');
   });
 });

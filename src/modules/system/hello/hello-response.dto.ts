@@ -8,3 +8,12 @@ export class HelloResponseDto {
     this.message = message;
   }
 }
+
+export class HelloApiResponseDto {
+  @ApiProperty({ type: () => HelloResponseDto })
+  public readonly data: HelloResponseDto;
+
+  public constructor(data: HelloResponseDto) {
+    this.data = data;
+  }
+}
