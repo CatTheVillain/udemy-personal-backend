@@ -1,5 +1,12 @@
 # Udemy Personal Backend
 
+## Configuration
+
+`NODE_ENV` accepts `development`, `test`, or `production` and defaults to `development`.
+`PORT` defaults to `3000`. `CORS_ALLOWED_ORIGINS` is a comma-separated allowlist: local
+HTTP `localhost` or `127.0.0.1` origins in development and test, and explicit HTTPS origins
+in production. Production startup fails when its allowlist is absent.
+
 Minimal NestJS backend baseline for the Udemy Personal project.
 
 ## API
