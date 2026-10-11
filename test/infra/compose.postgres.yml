@@ -1,0 +1,43 @@
+services:
+  postgres:
+    container_name: ${IDENTITY_TEST_CONTAINER:?IDENTITY_TEST_CONTAINER is required}
+    image: postgres:18.4@sha256:a02db8cac496f15b094798a38254f14d6e00741f709360e5e00bb6668ea31636
+    environment:
+      POSTGRES_DB: ${IDENTITY_TEST_DATABASE:?IDENTITY_TEST_DATABASE is required}
+      POSTGRES_USER: ${IDENTITY_TEST_DATABASE_USER:?IDENTITY_TEST_DATABASE_USER is required}
+      POSTGRES_PASSWORD: ${IDENTITY_TEST_DATABASE_PASSWORD:?IDENTITY_TEST_DATABASE_PASSWORD is required}
+    ports:
+      - '127.0.0.1:${IDENTITY_TEST_POSTGRES_PORT:?IDENTITY_TEST_POSTGRES_PORT is required}:5432'
+    volumes:
+      - identity-postgres-data:/var/lib/postgresql
+    networks:
+      - identity-postgres-network
+    labels:
+      com.udemy.identity-test.suite: identity-integration
+      com.udemy.identity-test.run-id: ${IDENTITY_TEST_RUN_ID:?IDENTITY_TEST_RUN_ID is required}
+      com.udemy.identity-test.project: ${COMPOSE_PROJECT_NAME:?COMPOSE_PROJECT_NAME is required}
+      com.udemy.identity-test.purpose: isolated-postgres
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB']
+      interval: 2s
+      timeout: 3s
+      retries: 15
+      start_period: 2s
+
+networks:
+  identity-postgres-network:
+    name: ${IDENTITY_TEST_NETWORK:?IDENTITY_TEST_NETWORK is required}
+    labels:
+      com.udemy.identity-test.suite: identity-integration
+      com.udemy.identity-test.run-id: ${IDENTITY_TEST_RUN_ID:?IDENTITY_TEST_RUN_ID is required}
+      com.udemy.identity-test.project: ${COMPOSE_PROJECT_NAME:?COMPOSE_PROJECT_NAME is required}
+      com.udemy.identity-test.purpose: isolated-postgres
+
+volumes:
+  identity-postgres-data:
+    name: ${IDENTITY_TEST_VOLUME:?IDENTITY_TEST_VOLUME is required}
+    labels:
+      com.udemy.identity-test.suite: identity-integration
+      com.udemy.identity-test.run-id: ${IDENTITY_TEST_RUN_ID:?IDENTITY_TEST_RUN_ID is required}
+      com.udemy.identity-test.project: ${COMPOSE_PROJECT_NAME:?COMPOSE_PROJECT_NAME is required}
+      com.udemy.identity-test.purpose: isolated-postgres
