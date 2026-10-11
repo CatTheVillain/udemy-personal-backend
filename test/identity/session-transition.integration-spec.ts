@@ -28,6 +28,17 @@ type Sources = {
   readonly sourceB: DataSource;
   readonly sourceC: DataSource;
 };
+type DataSourceLifecycle = {
+  readonly isInitialized: boolean;
+  initialize(): Promise<unknown>;
+  destroy(): Promise<void>;
+};
+type SourceLifecycles = {
+  readonly coordinator: DataSourceLifecycle;
+  readonly sourceA: DataSourceLifecycle;
+  readonly sourceB: DataSourceLifecycle;
+  readonly sourceC: DataSourceLifecycle;
+};
 type Runners = {
   readonly coordinator: QueryRunner;
   readonly sourceA: QueryRunner;
@@ -35,6 +46,58 @@ type Runners = {
 };
 
 describe('Identity guarded session transition', () => {
+  it('settles partial initialization and attempts every initialized cleanup', async () => {
+    let completeSourceCInitialization: (() => void) | undefined;
+    let sourceCInitialized = false;
+    const sourceA = createDataSourceLifecycle(true, () =>
+      Promise.reject(new Error('source A cleanup failed')),
+    );
+    const sourceB = createDataSourceLifecycle(false, () => Promise.resolve());
+    sourceB.initialize.mockRejectedValue(new Error('source B initialization failed'));
+    const sourceC: DataSourceLifecycle = {
+      destroy: jest.fn().mockResolvedValue(undefined),
+      initialize: jest.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            completeSourceCInitialization = () => {
+              sourceCInitialized = true;
+              resolve();
+            };
+          }),
+      ),
+      get isInitialized(): boolean {
+        return sourceCInitialized;
+      },
+    };
+    const sourceD = createDataSourceLifecycle(true, () => Promise.resolve());
+    const sources: SourceLifecycles = {
+      coordinator: sourceA,
+      sourceA: sourceB,
+      sourceB: sourceC,
+      sourceC: sourceD,
+    };
+
+    const initialization = initializeDataSources(sources);
+    let initializationFinished = false;
+    void initialization.catch(() => {
+      initializationFinished = true;
+    });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(initializationFinished).toBe(false);
+    expect(sourceC.initialize).toHaveBeenCalledTimes(1);
+
+    if (completeSourceCInitialization === undefined) {
+      throw new Error('Expected source C initialization to be pending.');
+    }
+    completeSourceCInitialization();
+    await expect(initialization).rejects.toThrow('source B initialization failed');
+    await expect(destroyDataSources(sources)).rejects.toThrow('source A cleanup failed');
+    expect(sourceA.destroy).toHaveBeenCalledTimes(1);
+    expect(sourceB.destroy).not.toHaveBeenCalled();
+    expect(sourceC.destroy).toHaveBeenCalledTimes(1);
+    expect(sourceD.destroy).toHaveBeenCalledTimes(1);
+  });
+
   it('allows exactly one concurrent real guarded revoke and preserves the full revoked record', async () => {
     const plan = createIsolatedPostgresPlan(
       createIsolatedPostgresEnvironment(
@@ -46,8 +109,8 @@ describe('Identity guarded session transition', () => {
     try {
       await run.migrate({ createDataSource: createIdentityDataSource });
       const sources = createDataSources(plan);
-      await initializeDataSources(sources);
       try {
+        await initializeDataSources(sources);
         const session = createActivePreAuthSession();
         await sources.sourceC.getRepository(SessionEntity).insert(session);
         const runners = createQueryRunners(sources);
@@ -125,8 +188,8 @@ describe('Identity guarded session transition', () => {
     try {
       await run.migrate({ createDataSource: createIdentityDataSource });
       const sources = createDataSources(plan);
-      await initializeDataSources(sources);
       try {
+        await initializeDataSources(sources);
         const session = createActivePreAuthSession();
         await sources.sourceC.getRepository(SessionEntity).insert(session);
         const runners = createQueryRunners(sources);
@@ -232,21 +295,42 @@ function createDataSources(plan: IsolatedPostgresPlan): Sources {
     sourceC: createIdentityDataSource(options),
   };
 }
-async function initializeDataSources(sources: Sources): Promise<void> {
-  await Promise.all([
+async function initializeDataSources(sources: SourceLifecycles): Promise<void> {
+  const results = await Promise.allSettled([
     sources.coordinator.initialize(),
     sources.sourceA.initialize(),
     sources.sourceB.initialize(),
     sources.sourceC.initialize(),
   ]);
+  throwLifecycleFailures(results, 'Data-source initialization failed.');
 }
-async function destroyDataSources(sources: Sources): Promise<void> {
-  await Promise.all([
-    sources.coordinator.destroy(),
-    sources.sourceA.destroy(),
-    sources.sourceB.destroy(),
-    sources.sourceC.destroy(),
-  ]);
+async function destroyDataSources(sources: SourceLifecycles): Promise<void> {
+  const results = await Promise.allSettled(
+    [sources.coordinator, sources.sourceA, sources.sourceB, sources.sourceC].map(async (source) => {
+      if (source.isInitialized) await source.destroy();
+    }),
+  );
+  throwLifecycleFailures(results, 'Data-source cleanup failed.');
+}
+function throwLifecycleFailures(
+  results: readonly PromiseSettledResult<unknown>[],
+  message: string,
+): void {
+  const failures = results.flatMap((result) =>
+    result.status === 'rejected' ? [result.reason] : [],
+  );
+  if (failures.length === 1) throw failures[0];
+  if (failures.length > 1) throw new AggregateError(failures, message);
+}
+function createDataSourceLifecycle(
+  isInitialized: boolean,
+  destroy: () => Promise<void>,
+): jest.Mocked<DataSourceLifecycle> {
+  return {
+    destroy: jest.fn(destroy),
+    initialize: jest.fn().mockResolvedValue(undefined),
+    isInitialized,
+  };
 }
 function createQueryRunners(sources: Sources): Runners {
   return {

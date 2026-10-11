@@ -399,6 +399,23 @@ describe('Identity persistence migration behavior', () => {
 });
 
 describe('Identity transaction durability', () => {
+  it('attempts every initialized data-source cleanup after one cleanup fails', async () => {
+    const sourceA: DestroyableDataSource = {
+      destroy: jest.fn().mockRejectedValue(new Error('source A cleanup failed')),
+      isInitialized: true,
+    };
+    const sourceB: DestroyableDataSource = {
+      destroy: jest.fn().mockResolvedValue(undefined),
+      isInitialized: true,
+    };
+
+    await expect(destroyInitializedDataSources([sourceA, sourceB])).rejects.toThrow(
+      'source A cleanup failed',
+    );
+    expect(sourceA.destroy).toHaveBeenCalledTimes(1);
+    expect(sourceB.destroy).toHaveBeenCalledTimes(1);
+  });
+
   it('rolls back and commits all four participants across separate connections', async () => {
     const plan = createIsolatedPostgresPlan(
       createIsolatedPostgresEnvironment(
@@ -411,9 +428,9 @@ describe('Identity transaction durability', () => {
       await run.migrate({ createDataSource: createIdentityDataSource });
       const sourceA = createIdentityDataSource(createIsolatedPostgresDatabaseOptions(plan));
       const sourceB = createIdentityDataSource(createIsolatedPostgresDatabaseOptions(plan));
-      await sourceA.initialize();
-      await sourceB.initialize();
       try {
+        await sourceA.initialize();
+        await sourceB.initialize();
         const transaction = new TypeOrmIdentityTransactionAdapter(sourceA);
         await expect(
           transaction.run({
@@ -445,14 +462,30 @@ describe('Identity transaction durability', () => {
         });
         expect(observed).toStrictEqual(committed);
       } finally {
-        await sourceA.destroy();
-        await sourceB.destroy();
+        await destroyInitializedDataSources([sourceA, sourceB]);
       }
     } finally {
       await run.cleanup();
     }
   });
 });
+
+type DestroyableDataSource = Pick<DataSource, 'destroy' | 'isInitialized'>;
+
+async function destroyInitializedDataSources(
+  sources: readonly DestroyableDataSource[],
+): Promise<void> {
+  const results = await Promise.allSettled(
+    sources.map(async (source) => {
+      if (source.isInitialized) await source.destroy();
+    }),
+  );
+  const failures = results.flatMap((result) =>
+    result.status === 'rejected' ? [result.reason] : [],
+  );
+  if (failures.length === 1) throw failures[0];
+  if (failures.length > 1) throw new AggregateError(failures, 'Data-source cleanup failed.');
+}
 
 function createOwnedResources(plan: IsolatedPostgresPlan): readonly IsolatedPostgresResource[] {
   return [

@@ -41,6 +41,8 @@ type DatabaseKey =
   | 'DATABASE_PASSWORD'
   | 'DATABASE_NAME'
   | 'DATABASE_SCHEMA';
+type ClosableApplication = Pick<INestApplication, 'close'>;
+type DestroyableDataSource = Pick<DataSource, 'destroy' | 'isInitialized'>;
 
 describe('Identity AppModule database composition', () => {
   it('fails missing database configuration before TypeORM opens a connection', async () => {
@@ -56,6 +58,20 @@ describe('Identity AppModule database composition', () => {
       initialize.mockRestore();
       restoreDatabaseEnvironment(previous);
     }
+  });
+
+  it('closes the app even when initialized observer cleanup fails', async () => {
+    const observer: DestroyableDataSource = {
+      destroy: jest.fn().mockRejectedValue(new Error('observer cleanup failed')),
+      isInitialized: true,
+    };
+    const app: ClosableApplication = { close: jest.fn().mockResolvedValue(undefined) };
+
+    await expect(closeApplicationResources(observer, app)).rejects.toThrow(
+      'observer cleanup failed',
+    );
+    expect(observer.destroy).toHaveBeenCalledTimes(1);
+    expect(app.close).toHaveBeenCalledTimes(1);
   });
 
   it('composes AppModule with an isolated database and resolves the named transaction port', async () => {
@@ -107,8 +123,7 @@ describe('Identity AppModule database composition', () => {
             updatedAt: now,
           });
         } finally {
-          await observer.destroy();
-          await closeApplication(app);
+          await closeApplicationResources(observer, app);
         }
       });
     } finally {
@@ -151,8 +166,20 @@ async function withDatabaseEnvironment(
   }
 }
 
-async function closeApplication(app: INestApplication): Promise<void> {
-  await app.close();
+async function closeApplicationResources(
+  observer: DestroyableDataSource,
+  app: ClosableApplication,
+): Promise<void> {
+  const results = await Promise.allSettled([closeObserver(observer), app.close()]);
+  const failures = results.flatMap((result) =>
+    result.status === 'rejected' ? [result.reason] : [],
+  );
+  if (failures.length === 1) throw failures[0];
+  if (failures.length > 1) throw new AggregateError(failures, 'Application cleanup failed.');
+}
+
+async function closeObserver(observer: DestroyableDataSource): Promise<void> {
+  if (observer.isInitialized) await observer.destroy();
 }
 
 async function runStockMigrationCli(plan: IsolatedPostgresPlan): Promise<void> {
