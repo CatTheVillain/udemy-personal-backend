@@ -3,8 +3,8 @@ import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, OpenAPIObject, SwaggerModule } from '@nestjs/swagger';
 import request from 'supertest';
 
-import { AppModule } from '../src/app.module';
 import { configureApplication } from '../src/main';
+import { HttpContractFixtureModule } from './fixtures/http-contract.fixture';
 
 const EXPECTED_HELLO_RESPONSE = { data: { message: 'Hello World!' } };
 
@@ -12,7 +12,7 @@ describe('Hello public contract (e2e)', () => {
   let app: INestApplication;
 
   beforeAll(async () => {
-    app = await NestFactory.create(AppModule, { logger: false });
+    app = await NestFactory.create(HttpContractFixtureModule, { logger: false });
     configureApplication(app);
     await app.init();
   });

@@ -22,7 +22,6 @@ import type { DestinationStream } from 'pino';
 import { lastValueFrom, Observable, of } from 'rxjs';
 import request from 'supertest';
 
-import { AppModule } from '../src/app.module';
 import { AppConfig } from '../src/shared/config/app-config';
 import {
   ApiResponse,
@@ -33,6 +32,7 @@ import {
 import { ApiResponseInterceptor } from '../src/shared/http/api-response.interceptor';
 import { SkipResponseEnvelope } from '../src/shared/http/skip-response-envelope.decorator';
 import { ApplicationOptions, configureApplication } from '../src/main';
+import { HttpContractFixtureModule } from './fixtures/http-contract.fixture';
 
 const LOCAL_ORIGIN = 'http://localhost:4200';
 const VALID_REQUEST_ID = 'f5b75d70-7eaa-4a1a-b93e-29c566eb0e44';
@@ -183,7 +183,7 @@ class HttpFoundationProbeController {
 }
 
 @Module({
-  imports: [AppModule],
+  imports: [HttpContractFixtureModule],
   controllers: [HttpFoundationProbeController],
 })
 class HttpFoundationProbeModule {}
