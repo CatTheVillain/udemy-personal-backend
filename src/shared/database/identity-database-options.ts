@@ -7,6 +7,7 @@ import { RegistrationThrottleEntity } from '../../modules/identity/infrastructur
 import { UserEntity } from '../../modules/identity/infrastructure/persistence/entities/user.entity';
 import { InitialIdentityPersistence1760194800000 } from '../../migrations/1760194800000-initial-identity-persistence';
 import { AddIdentityPersistenceInvariants1760194800001 } from '../../migrations/1760194800001-add-identity-persistence-invariants';
+import { AddIdentityThrottleKeyOwners1760270400000 } from '../../migrations/1760270400000-add-identity-throttle-key-owners';
 
 const POSTGRES_IDENTIFIER = /^[a-z_][a-z0-9_]{0,62}$/;
 
@@ -35,6 +36,7 @@ export function createIdentityDatabaseOptions(options: IdentityDatabaseOptions):
     migrations: [
       InitialIdentityPersistence1760194800000,
       AddIdentityPersistenceInvariants1760194800001,
+      AddIdentityThrottleKeyOwners1760270400000,
     ],
   };
 }

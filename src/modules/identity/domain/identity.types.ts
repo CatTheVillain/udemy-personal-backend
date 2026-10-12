@@ -44,8 +44,32 @@ export interface RevokeActiveSessionInput {
   readonly now: Date;
 }
 
+export interface RotatePreAuthCsrfInput {
+  readonly id: string;
+  readonly tokenHash: string;
+  readonly csrfTokenHash: string;
+  readonly now: Date;
+}
+
+export interface ConsumePreAuthSessionInput {
+  readonly id: string;
+  readonly tokenHash: string;
+  readonly csrfTokenHash: string;
+  readonly now: Date;
+}
+
 export interface SessionTransitionResult {
   readonly affectedRows: AffectedRows;
+}
+
+export interface ThrottleWindowInput {
+  readonly keyHash: string;
+  readonly now: Date;
+  readonly expiresAt: Date;
+}
+
+export interface ThrottleAdmissionResult {
+  readonly admitted: boolean;
 }
 
 export interface RegistrationThrottleLookup {

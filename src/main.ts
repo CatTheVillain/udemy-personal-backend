@@ -61,7 +61,11 @@ export function configureApplication(
 
   const document = SwaggerModule.createDocument(
     app,
-    new DocumentBuilder().setTitle('Udemy Personal Backend').setVersion('1.0').build(),
+    new DocumentBuilder()
+      .setTitle('Udemy Personal Backend')
+      .setVersion('1.0')
+      .addCookieAuth('__Host-session', undefined, 'preAuthSession')
+      .build(),
   );
   SwaggerModule.setup(`${API_PREFIX}/docs`, app, document);
 }

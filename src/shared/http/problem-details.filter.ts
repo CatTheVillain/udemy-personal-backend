@@ -5,6 +5,7 @@ import { Response } from 'express';
 import createHttpError from 'http-errors';
 
 import { ProblemDetailsDto } from './problem-details';
+import { PublicProblemException } from './public-problem.exception';
 import { getRequestId } from './request-correlation';
 
 interface KnownHttpProblem {
@@ -99,6 +100,16 @@ export class ProblemDetailsFilter implements ExceptionFilter {
 
 function createProblemDetails(exception: unknown, requestId: string): ProblemDetailsDto {
   const status = getSafeStatus(exception);
+  if (exception instanceof PublicProblemException) {
+    return new ProblemDetailsDto(
+      'about:blank',
+      STATUS_CODES[status] ?? 'HTTP Error',
+      status,
+      'The request could not be completed.',
+      exception.code,
+      requestId,
+    );
+  }
   const knownProblem = KNOWN_HTTP_PROBLEMS.get(status);
 
   if (knownProblem === undefined) {

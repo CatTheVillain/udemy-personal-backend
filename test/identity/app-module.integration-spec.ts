@@ -33,6 +33,8 @@ const DATABASE_KEYS = [
   'DATABASE_NAME',
   'DATABASE_SCHEMA',
 ] as const;
+const IDENTITY_AUTH_KEYS = ['IDENTITY_THROTTLE_HMAC_SECRET'] as const;
+const APPLICATION_KEYS = [...DATABASE_KEYS, ...IDENTITY_AUTH_KEYS] as const;
 const executeFile = promisify(execFile);
 type DatabaseKey =
   | 'DATABASE_HOST'
@@ -41,6 +43,7 @@ type DatabaseKey =
   | 'DATABASE_PASSWORD'
   | 'DATABASE_NAME'
   | 'DATABASE_SCHEMA';
+type ApplicationKey = DatabaseKey | 'IDENTITY_THROTTLE_HMAC_SECRET';
 type ClosableApplication = Pick<INestApplication, 'close'>;
 type DestroyableDataSource = Pick<DataSource, 'destroy' | 'isInitialized'>;
 
@@ -132,16 +135,17 @@ describe('Identity AppModule database composition', () => {
   });
 });
 
-function captureDatabaseEnvironment(): Map<DatabaseKey, string | undefined> {
-  return new Map(DATABASE_KEYS.map((key) => [key, process.env[key]]));
+function captureDatabaseEnvironment(): Map<ApplicationKey, string | undefined> {
+  return new Map(APPLICATION_KEYS.map((key) => [key, process.env[key]]));
 }
 
 function clearDatabaseEnvironment(): void {
   for (const key of DATABASE_KEYS) delete process.env[key];
+  process.env.IDENTITY_THROTTLE_HMAC_SECRET = randomBytes(32).toString('base64url');
 }
 
-function restoreDatabaseEnvironment(previous: Map<DatabaseKey, string | undefined>): void {
-  for (const key of DATABASE_KEYS) {
+function restoreDatabaseEnvironment(previous: Map<ApplicationKey, string | undefined>): void {
+  for (const key of APPLICATION_KEYS) {
     const value = previous.get(key);
     if (value === undefined) delete process.env[key];
     else process.env[key] = value;
@@ -160,6 +164,7 @@ async function withDatabaseEnvironment(
     process.env.DATABASE_PASSWORD = plan.environment.IDENTITY_TEST_DATABASE_PASSWORD;
     process.env.DATABASE_NAME = plan.databaseName;
     process.env.DATABASE_SCHEMA = plan.schemaName;
+    process.env.IDENTITY_THROTTLE_HMAC_SECRET = randomBytes(32).toString('base64url');
     await action();
   } finally {
     restoreDatabaseEnvironment(previous);
