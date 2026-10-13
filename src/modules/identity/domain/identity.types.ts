@@ -1,5 +1,6 @@
 export type SessionState = 'pre_auth' | 'authenticated' | 'revoked';
 export type AffectedRows = 0 | 1;
+export const LOGIN_FAILURE_LIMIT = 5;
 
 export interface User {
   readonly id: string;

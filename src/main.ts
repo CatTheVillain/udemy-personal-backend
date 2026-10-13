@@ -41,6 +41,7 @@ export function configureApplication(
   app.setGlobalPrefix(API_PREFIX);
   const corsOptions: CorsOptions = {
     credentials: true,
+    exposedHeaders: ['Retry-After'],
     origin: (origin, callback) => {
       callback(null, origin === undefined || config.corsAllowedOrigins.includes(origin));
     },

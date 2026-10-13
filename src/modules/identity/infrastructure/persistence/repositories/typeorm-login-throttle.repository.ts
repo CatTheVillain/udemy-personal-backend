@@ -5,6 +5,7 @@ import { LoginThrottleRepositoryPort } from '../../../application/ports/identity
 import {
   LoginThrottle,
   LoginThrottleLookup,
+  LOGIN_FAILURE_LIMIT,
   ThrottleAdmissionResult,
   ThrottleWindowInput,
 } from '../../../domain/identity.types';
@@ -67,7 +68,7 @@ export class TypeOrmLoginThrottleRepository implements LoginThrottleRepositoryPo
     if (entity === null || entity.expiresAt <= now) {
       throw new Error('Login throttle must be acquired before a failure is consumed.');
     }
-    if (entity.failureCount >= 5) return { admitted: false };
+    if (entity.failureCount >= LOGIN_FAILURE_LIMIT) return { admitted: false };
     if (entity.failureCount === 0) {
       entity.windowStartedAt = now;
       entity.expiresAt = new Date(now.getTime() + 15 * 60 * 1000);

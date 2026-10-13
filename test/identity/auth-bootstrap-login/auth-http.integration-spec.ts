@@ -58,16 +58,22 @@ describe('Identity HTTP registration and login', () => {
     cleanup = (): Promise<void> => run.cleanup();
     await run.migrate({ createDataSource: createIdentityDataSource });
     applyEnvironment(plan);
-    app = await NestFactory.create(AppModule, { abortOnError: false, logger: false });
-    configureApplication(app);
-    await app.init();
     observer = createIdentityDataSource(createIsolatedPostgresDatabaseOptions(plan));
     await observer.initialize();
   });
 
+  beforeEach(async () => {
+    app = await NestFactory.create(AppModule, { abortOnError: false, logger: false });
+    configureApplication(app);
+    await app.init();
+  });
+
+  afterEach(async () => {
+    if (app !== undefined) await app.close();
+  });
+
   afterAll(async () => {
     if (observer?.isInitialized) await observer.destroy();
-    if (app !== undefined) await app.close();
     if (cleanup !== undefined) await cleanup();
     for (const [key, value] of previousEnvironment) {
       if (value === undefined) delete process.env[key];
@@ -256,7 +262,7 @@ describe('Identity HTTP registration and login', () => {
     await expect(hasher.verify('literal é password ١٢٣', user.passwordHash)).resolves.toBe(false);
   });
 
-  it('uses generic credentials errors, admits five failures, and allows valid login to reset its own key', async () => {
+  it('uses generic credentials errors and rejects even valid credentials after five failures', async () => {
     const registration = await bootstrapCsrf(app);
     await request(app.getHttpServer())
       .post('/api/v1/auth/register')
@@ -294,29 +300,15 @@ describe('Identity HTTP registration and login', () => {
       .set('Cookie', valid.cookie)
       .set('X-CSRF-Token', valid.csrfToken)
       .send({ email: 'login@example.test', password: PASSWORD })
-      .expect(200);
-    expect(validResponse.body).toEqual({ data: { authenticated: true } });
+      .expect(429);
+    expect(validResponse.body.code).toBe('login_rate_limited');
     const throttles = await observer.getRepository(LoginThrottleEntity).find();
-    expect(throttles.filter((throttle) => throttle.failureCount !== 0)).toHaveLength(0);
-
-    const firstFailureAfterReset = new Date();
-    const afterReset = await bootstrapCsrf(app);
-    await request(app.getHttpServer())
-      .post('/api/v1/auth/login')
-      .set('Origin', ORIGIN)
-      .set('Cookie', afterReset.cookie)
-      .set('X-CSRF-Token', afterReset.csrfToken)
-      .send({ email: 'login@example.test', password: 'wrong literal password' })
-      .expect(401);
-    const restartedWindow = await observer
-      .getRepository(LoginThrottleEntity)
-      .findOneByOrFail({ failureCount: 1 });
-    expect(restartedWindow.windowStartedAt.getTime()).toBeGreaterThanOrEqual(
-      firstFailureAfterReset.getTime(),
-    );
-    expect(restartedWindow.expiresAt.getTime() - restartedWindow.windowStartedAt.getTime()).toBe(
-      15 * 60 * 1000,
-    );
+    expect(throttles.filter((throttle) => throttle.failureCount === 5)).toHaveLength(1);
+    expect(
+      await observer.getRepository(SessionEntity).findOneByOrFail({
+        tokenHash: sha256(cookieValue(valid.cookie)),
+      }),
+    ).toMatchObject({ state: 'pre_auth', revokedAt: null });
   });
 });
 

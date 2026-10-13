@@ -6,14 +6,15 @@ import { canonicalizeIdentityEmail } from '../../../shared/validation/identity-i
 import { createOpaqueIdentityToken, isOpaqueIdentityToken, sha256Hex } from './auth-secrets';
 import { IdentityAuthConfig } from './identity-auth.config';
 import { IDENTITY_CLOCK, IdentityClock } from './identity-clock';
+import { PasswordWorkLimiter, PasswordWorkRejection } from './password-work-limiter';
 import {
   IDENTITY_TRANSACTION_PORT,
   IdentityTransactionPort,
   IdentityTransactionScope,
 } from './ports/identity.ports';
 import { ScryptPasswordHasher } from './password-hasher';
-import { createThrottleKey, ThrottlePurpose } from './throttle-key';
-import { Session } from '../domain/identity.types';
+import { createPasswordWorkSourceKey, createThrottleKey, ThrottlePurpose } from './throttle-key';
+import { LOGIN_FAILURE_LIMIT, Session } from '../domain/identity.types';
 
 const PRE_AUTH_LIFETIME_MS = 10 * 60 * 1000;
 const AUTH_IDLE_LIFETIME_MS = 8 * 60 * 60 * 1000;
@@ -41,8 +42,9 @@ export interface AuthenticatedSessionResult {
   readonly sessionToken: string;
 }
 
-export type RegistrationResult = 'registered' | 'duplicate' | 'rate_limited';
-export type LoginResult = 'invalid_credentials' | 'rate_limited';
+export type RegistrationResult =
+  'registered' | 'duplicate' | 'rate_limited' | PasswordWorkRejection;
+export type LoginResult = 'invalid_credentials' | 'rate_limited' | PasswordWorkRejection;
 export type InitialPreAuthCheck =
   | { readonly kind: 'accepted'; readonly context: PreAuthContext }
   | { readonly kind: 'clear_and_unauthorized' }
@@ -52,6 +54,7 @@ export type InitialPreAuthCheck =
 @Injectable()
 export class IdentityAuthenticationService {
   private readonly passwordHasher = new ScryptPasswordHasher();
+  private readonly passwordWorkLimiter = new PasswordWorkLimiter();
 
   public constructor(
     @Inject(IDENTITY_TRANSACTION_PORT) private readonly transactions: IdentityTransactionPort,
@@ -124,6 +127,7 @@ export class IdentityAuthenticationService {
   ): Promise<RegistrationResult> {
     const canonicalEmail = canonicalizeIdentityEmail(command.email);
     const throttleKey = this.getThrottleKey('registration', canonicalEmail, command.remoteAddress);
+    const passwordWorkSourceKey = this.getPasswordWorkSourceKey(command.remoteAddress);
     return this.transactions.run({
       execute: async (scope) => {
         const lockedSession = await scope.sessions.findLockedById(preAuth.sessionId);
@@ -136,7 +140,14 @@ export class IdentityAuthenticationService {
         });
         if (!admitted.admitted) return 'rate_limited';
 
-        const passwordHash = await this.passwordHasher.hash(command.password);
+        const passwordWork = this.passwordWorkLimiter.tryStart(passwordWorkSourceKey);
+        if (passwordWork.kind !== 'started') return passwordWork;
+        let passwordHash: string;
+        try {
+          passwordHash = await this.passwordHasher.hash(command.password);
+        } finally {
+          passwordWork.release();
+        }
         const inserted = await scope.users.insertIfAbsent({
           id: randomUUID(),
           normalizedEmail: canonicalEmail,
@@ -157,21 +168,30 @@ export class IdentityAuthenticationService {
   ): Promise<LoginResult | AuthenticatedSessionResult> {
     const canonicalEmail = canonicalizeIdentityEmail(command.email);
     const throttleKey = this.getThrottleKey('login', canonicalEmail, command.remoteAddress);
+    const passwordWorkSourceKey = this.getPasswordWorkSourceKey(command.remoteAddress);
     return this.transactions.run({
       execute: async (scope) => {
         const lockedSession = await scope.sessions.findLockedById(preAuth.sessionId);
         const now = this.clock.now();
         assertCurrentPreAuth(lockedSession, preAuth, now);
-        await scope.loginThrottles.acquireForLogin({
+        const throttle = await scope.loginThrottles.acquireForLogin({
           keyHash: throttleKey,
           now,
           expiresAt: plusMilliseconds(now, THROTTLE_WINDOW_MS),
         });
+        if (throttle.failureCount >= LOGIN_FAILURE_LIMIT) return 'rate_limited';
         const user = await scope.users.findByNormalizedEmail(canonicalEmail);
-        const verified =
-          user === null
-            ? (await this.passwordHasher.verifyDummy(command.password), false)
-            : await this.passwordHasher.verify(command.password, user.passwordHash);
+        const passwordWork = this.passwordWorkLimiter.tryStart(passwordWorkSourceKey);
+        if (passwordWork.kind !== 'started') return passwordWork;
+        let verified: boolean;
+        try {
+          verified =
+            user === null
+              ? (await this.passwordHasher.verifyDummy(command.password), false)
+              : await this.passwordHasher.verify(command.password, user.passwordHash);
+        } finally {
+          passwordWork.release();
+        }
         if (!verified || user === null) {
           const failure = await scope.loginThrottles.consumeFailure(throttleKey, now);
           return failure.admitted ? 'invalid_credentials' : 'rate_limited';
@@ -214,6 +234,12 @@ export class IdentityAuthenticationService {
     remoteAddress: string | undefined,
   ): string {
     const key = createThrottleKey(this.config, purpose, canonicalEmail, remoteAddress);
+    if (key === null) throw new IdentityAuthenticationFailure('forbidden');
+    return key;
+  }
+
+  private getPasswordWorkSourceKey(remoteAddress: string | undefined): string {
+    const key = createPasswordWorkSourceKey(this.config, remoteAddress);
     if (key === null) throw new IdentityAuthenticationFailure('forbidden');
     return key;
   }

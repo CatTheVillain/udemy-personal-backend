@@ -62,16 +62,22 @@ describe('Identity stale-CSRF transaction recheck', () => {
     cleanup = (): Promise<void> => run.cleanup();
     await run.migrate({ createDataSource: createIdentityDataSource });
     configureEnvironment(plan);
-    app = await NestFactory.create(AppModule, { abortOnError: false, logger: false });
-    configureApplication(app);
-    await app.init();
     observer = createIdentityDataSource(createIsolatedPostgresDatabaseOptions(plan));
     await observer.initialize();
   });
 
+  beforeEach(async () => {
+    app = await NestFactory.create(AppModule, { abortOnError: false, logger: false });
+    configureApplication(app);
+    await app.init();
+  });
+
+  afterEach(async () => {
+    if (app !== undefined) await app.close();
+  });
+
   afterAll(async () => {
     if (observer?.isInitialized) await observer.destroy();
-    if (app !== undefined) await app.close();
     if (cleanup !== undefined) await cleanup();
     for (const [key, value] of previous) {
       if (value === undefined) delete process.env[key];

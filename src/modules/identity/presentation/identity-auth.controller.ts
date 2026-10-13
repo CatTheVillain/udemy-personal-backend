@@ -23,6 +23,7 @@ import {
   ApiOkResponse,
   ApiOperation,
   ApiResponseNoStatusOptions,
+  ApiServiceUnavailableResponse,
   ApiTags,
   ApiTooManyRequestsResponse,
   ApiUnauthorizedResponse,
@@ -37,6 +38,7 @@ import {
   IdentityAuthenticationService,
   PreAuthContext,
 } from '../application/identity-authentication.service';
+import { PasswordWorkRejection } from '../application/password-work-limiter';
 import { ProblemDetailsDto } from '../../../shared/http/problem-details';
 import { PublicProblemException } from '../../../shared/http/public-problem.exception';
 import { AuthEmailPasswordRequestDto } from './dto/auth-email-password.request.dto';
@@ -120,7 +122,20 @@ export class IdentityAuthController {
   )
   @ApiForbiddenResponse(problemResponse('Origin or CSRF validation failed'))
   @ApiConflictResponse(problemResponse('The email is already registered'))
-  @ApiTooManyRequestsResponse(problemResponse('Registration throttle is exhausted'))
+  @ApiTooManyRequestsResponse(
+    problemResponse(
+      'Registration or password-work throttle is exhausted',
+      undefined,
+      'Retry time.',
+    ),
+  )
+  @ApiServiceUnavailableResponse(
+    problemResponse(
+      'Password-work capacity is temporarily unavailable',
+      undefined,
+      'Advisory retry time.',
+    ),
+  )
   public async register(
     @Body() body: AuthEmailPasswordRequestDto,
     @Req() request: IdentityHttpRequest,
@@ -135,6 +150,7 @@ export class IdentityAuthController {
       if (result === 'rate_limited') {
         throw new PublicProblemException(HttpStatus.TOO_MANY_REQUESTS, 'registration_rate_limited');
       }
+      if (typeof result !== 'string') throwPasswordWorkRejection(result, response);
       if (result === 'duplicate') throw new ConflictException();
       clearIdentitySessionCookie(response);
       return new RegistrationResponseDto();
@@ -162,7 +178,16 @@ export class IdentityAuthController {
     ),
   )
   @ApiForbiddenResponse(problemResponse('Origin or CSRF validation failed'))
-  @ApiTooManyRequestsResponse(problemResponse('Login throttle is exhausted'))
+  @ApiTooManyRequestsResponse(
+    problemResponse('Login or password-work throttle is exhausted', undefined, 'Retry time.'),
+  )
+  @ApiServiceUnavailableResponse(
+    problemResponse(
+      'Password-work capacity is temporarily unavailable',
+      undefined,
+      'Advisory retry time.',
+    ),
+  )
   public async login(
     @Body() body: AuthEmailPasswordRequestDto,
     @Req() request: IdentityHttpRequest,
@@ -180,6 +205,7 @@ export class IdentityAuthController {
       if (result === 'invalid_credentials') {
         throw new PublicProblemException(HttpStatus.UNAUTHORIZED, 'credentials_invalid');
       }
+      if ('kind' in result) throwPasswordWorkRejection(result, response);
       setIdentitySessionCookie(response, result.sessionToken);
       return new LoginResponseDto();
     } catch (error: unknown) {
@@ -207,9 +233,21 @@ function translateAuthenticationFailure(error: unknown, response: Response): nev
   throw error;
 }
 
+function throwPasswordWorkRejection(result: PasswordWorkRejection, response: Response): never {
+  response.setHeader('Retry-After', String(result.retryAfterSeconds));
+  if (result.kind === 'rate_limited') {
+    throw new PublicProblemException(HttpStatus.TOO_MANY_REQUESTS, 'password_work_rate_limited');
+  }
+  if (result.kind === 'busy') {
+    throw new PublicProblemException(HttpStatus.SERVICE_UNAVAILABLE, 'password_work_busy');
+  }
+  throw new PublicProblemException(HttpStatus.SERVICE_UNAVAILABLE, 'password_work_unavailable');
+}
+
 function problemResponse(
   description: string,
   cookieDescription?: string,
+  retryAfterDescription?: string,
 ): ApiResponseNoStatusOptions {
   const response: ApiResponseNoStatusOptions = {
     description,
@@ -219,7 +257,18 @@ function problemResponse(
     },
   };
   if (cookieDescription !== undefined) response.headers = sessionCookieHeader(cookieDescription);
+  if (retryAfterDescription !== undefined)
+    response.headers = retryAfterHeader(retryAfterDescription);
   return response;
+}
+
+function retryAfterHeader(description: string): HeadersObject {
+  return {
+    'Retry-After': {
+      description,
+      schema: { type: 'string' },
+    },
+  };
 }
 
 function optionalRequestHeader(name: string, description: string): ApiHeaderOptions {

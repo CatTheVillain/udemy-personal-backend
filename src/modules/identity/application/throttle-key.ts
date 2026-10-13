@@ -18,6 +18,17 @@ export function createThrottleKey(
     .digest('hex');
 }
 
+export function createPasswordWorkSourceKey(
+  config: IdentityAuthConfig,
+  remoteAddress: string | undefined,
+): string | null {
+  const trustedAddress = canonicalizeTrustedAddress(remoteAddress);
+  if (trustedAddress === null) return null;
+  return createHmac('sha256', config.throttleHmacSecret)
+    .update(`password-work-source\u0000${trustedAddress}`, 'utf8')
+    .digest('hex');
+}
+
 function canonicalizeTrustedAddress(value: string | undefined): string | null {
   if (value === undefined || isIP(value) === 0) return null;
   if (value.startsWith('::ffff:')) {
