@@ -7,7 +7,11 @@ export type PublicProblemCode =
   | 'login_rate_limited'
   | 'password_work_rate_limited'
   | 'password_work_busy'
-  | 'password_work_unavailable';
+  | 'password_work_unavailable'
+  | 'csrf_bootstrap_rate_limited'
+  | 'csrf_bootstrap_unavailable'
+  | 'csrf_bootstrap_busy'
+  | 'csrf_bootstrap_capacity_unavailable';
 
 export class PublicProblemException extends HttpException {
   public constructor(

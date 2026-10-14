@@ -213,13 +213,17 @@ describe('Identity HTTP registration and login', () => {
   });
 
   it('uses canonical email and socket address for durable registration keys despite forwarded headers', async () => {
+    const attempts = [
+      { email: ' Socket@Example.Test ', forwarded: '203.0.113.1' },
+      { email: 'socket@example.test', forwarded: '198.51.100.2' },
+      { email: 'socket@example.test ', forwarded: '192.0.2.3' },
+    ];
+    const bootstraps: BootstrapReceipt[] = [];
+    for (const _attempt of attempts) bootstraps.push(await bootstrapCsrf(app));
     const requests = await Promise.all(
-      [
-        { email: ' Socket@Example.Test ', forwarded: '203.0.113.1' },
-        { email: 'socket@example.test', forwarded: '198.51.100.2' },
-        { email: 'socket@example.test ', forwarded: '192.0.2.3' },
-      ].map(async ({ email, forwarded }) => {
-        const bootstrap = await bootstrapCsrf(app);
+      attempts.map(({ email, forwarded }, index) => {
+        const bootstrap = bootstraps[index];
+        if (bootstrap === undefined) throw new Error('Missing concurrent registration bootstrap.');
         return request(app.getHttpServer())
           .post('/api/v1/auth/register')
           .set('Origin', ORIGIN)

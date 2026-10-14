@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { createServer } from 'node:net';
 
 import { INestApplication } from '@nestjs/common';
@@ -33,6 +33,8 @@ import {
 
 const ORIGIN = 'http://localhost:4200';
 const PASSWORD = 'literal valid password';
+const BOOTSTRAP_ADVISORY_LOCK_KEY = 734_111_002;
+const BOOTSTRAP_POPULATION_CAP = 10_000;
 
 describe('Identity stale-CSRF transaction recheck', () => {
   let app: INestApplication;
@@ -325,7 +327,10 @@ describe('Identity stale-CSRF transaction recheck', () => {
 
   it('serializes six simultaneous invalid logins to five credentials errors and one limit', async () => {
     await registerAccount(app, 'parallel@example.test');
-    const attempts = await Promise.all(Array.from({ length: 6 }, () => bootstrapCsrf(app)));
+    const attempts: Bootstrap[] = [];
+    for (let index = 0; index < 6; index += 1) {
+      attempts.push(await bootstrapCsrf(app));
+    }
     const responses = await Promise.all(
       attempts.map((attempt) =>
         request(app.getHttpServer())
@@ -637,6 +642,143 @@ describe('Identity stale-CSRF transaction recheck', () => {
       }
     },
   );
+
+  it('returns bootstrap busy without waiting while another connection owns the advisory lock', async () => {
+    const holder = observer.createQueryRunner();
+    await holder.connect();
+    await holder.startTransaction();
+    try {
+      await holder.query('SELECT pg_advisory_xact_lock($1)', [BOOTSTRAP_ADVISORY_LOCK_KEY]);
+      const response = await Promise.race([
+        request(app.getHttpServer())
+          .get('/api/v1/auth/csrf')
+          .set('Origin', ORIGIN)
+          .then((value) => value),
+        new Promise<never>((_resolve, reject) =>
+          setTimeout(() => reject(new Error('Bootstrap advisory admission waited.')), 1_000),
+        ),
+      ]);
+
+      expect(response.status).toBe(503);
+      expect(response.body.code).toBe('csrf_bootstrap_busy');
+      expect(response.headers['retry-after']).toBe('1');
+      expect(response.headers['access-control-expose-headers']).toContain('Retry-After');
+      expect(response.headers['set-cookie']).toBeUndefined();
+      expect(response.headers['content-type']).toContain('application/problem+json');
+    } finally {
+      if (holder.isTransactionActive) await holder.rollbackTransaction();
+      await holder.release();
+    }
+  });
+
+  it('skips a separately locked eligible row while deleting another bounded cleanup candidate', async () => {
+    const held = await insertTerminalPreAuthSession(observer, 'expired');
+    const removable = await insertTerminalPreAuthSession(observer, 'revoked');
+    const holder = observer.createQueryRunner();
+    await holder.connect();
+    await holder.startTransaction();
+    try {
+      await holder.query(
+        `SELECT id FROM "${plan.schemaName}".identity_sessions WHERE id = $1 FOR UPDATE`,
+        [held.id],
+      );
+      const response = await request(app.getHttpServer()).get('/api/v1/auth/csrf').expect(200);
+
+      expect(response.headers['set-cookie']).toBeDefined();
+      expect(await observer.getRepository(SessionEntity).findOneBy({ id: held.id })).not.toBeNull();
+      expect(
+        await observer.getRepository(SessionEntity).findOneBy({ id: removable.id }),
+      ).toBeNull();
+    } finally {
+      if (holder.isTransactionActive) await holder.rollbackTransaction();
+      await holder.release();
+      await observer.getRepository(SessionEntity).delete(held.id);
+    }
+  });
+
+  it('commits eligible cleanup before reporting retained bootstrap capacity exhaustion', async () => {
+    const eligible = await insertTerminalPreAuthSession(observer, 'expired');
+    const before = await countBootstrapPopulation(observer, plan.schemaName);
+    const eligibleBefore = await countBootstrapCleanupEligibility(observer, plan.schemaName);
+    const insertedIds = await insertActivePreAuthPopulation(
+      observer,
+      BOOTSTRAP_POPULATION_CAP + eligibleBefore - before,
+    );
+    try {
+      expect(await countBootstrapPopulation(observer, plan.schemaName)).toBe(
+        BOOTSTRAP_POPULATION_CAP + eligibleBefore,
+      );
+
+      const response = await request(app.getHttpServer()).get('/api/v1/auth/csrf').expect(503);
+
+      expect(response.body.code).toBe('csrf_bootstrap_capacity_unavailable');
+      expect(response.headers['retry-after']).toBe('60');
+      expect(response.headers['set-cookie']).toBeUndefined();
+      expect(await observer.getRepository(SessionEntity).findOneBy({ id: eligible.id })).toBeNull();
+      const after = await countBootstrapPopulation(observer, plan.schemaName);
+      expect(after).toBeGreaterThanOrEqual(BOOTSTRAP_POPULATION_CAP);
+      expect(after).toBeLessThan(before + insertedIds.length);
+    } finally {
+      await observer.getRepository(SessionEntity).delete(insertedIds);
+      await observer.getRepository(SessionEntity).delete(eligible.id);
+    }
+  });
+
+  it('rolls back cleanup when the bootstrap insert fails in PostgreSQL', async () => {
+    const eligible = await insertTerminalPreAuthSession(observer, 'expired');
+    const trigger = `fail_bootstrap_insert_${randomBytes(6).toString('hex')}`;
+    const functionName = `${trigger}_function`;
+    try {
+      await observer.query(
+        `CREATE FUNCTION "${plan.schemaName}"."${functionName}"() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'bootstrap insert test failure'; END; $$`,
+      );
+      await observer.query(
+        `CREATE TRIGGER "${trigger}" BEFORE INSERT ON "${plan.schemaName}".identity_sessions FOR EACH ROW EXECUTE FUNCTION "${plan.schemaName}"."${functionName}"()`,
+      );
+
+      await request(app.getHttpServer()).get('/api/v1/auth/csrf').expect(500);
+
+      expect(
+        await observer.getRepository(SessionEntity).findOneBy({ id: eligible.id }),
+      ).not.toBeNull();
+    } finally {
+      await observer.query(
+        `DROP TRIGGER IF EXISTS "${trigger}" ON "${plan.schemaName}".identity_sessions`,
+      );
+      await observer.query(`DROP FUNCTION IF EXISTS "${plan.schemaName}"."${functionName}"()`);
+    }
+  });
+
+  it('uses bounded indexed cleanup branches and a limited bootstrap population probe', async () => {
+    const activeIds = await insertActivePreAuthPopulation(observer, 10_002);
+    const expired = await insertTerminalPreAuthSession(observer, 'expired');
+    const revoked = await insertTerminalPreAuthSession(observer, 'revoked');
+    try {
+      await observer.query(`ANALYZE "${plan.schemaName}".identity_sessions`);
+      const expiredPlan = await explain(
+        observer,
+        `SELECT id FROM "${plan.schemaName}".identity_sessions WHERE state = 'pre_auth' AND absolute_expires_at <= CURRENT_TIMESTAMP ORDER BY absolute_expires_at, id LIMIT 256`,
+      );
+      const revokedPlan = await explain(
+        observer,
+        `SELECT id FROM "${plan.schemaName}".identity_sessions WHERE state = 'revoked' AND user_id IS NULL ORDER BY revoked_at, id LIMIT 256`,
+      );
+      const populationPlan = await explain(
+        observer,
+        `SELECT count(*) FROM (SELECT 1 FROM "${plan.schemaName}".identity_sessions WHERE state = 'pre_auth' OR (state = 'revoked' AND user_id IS NULL) LIMIT 10001) AS capped_population`,
+      );
+
+      expect(expiredPlan).toContain('Limit');
+      expect(expiredPlan).toContain('idx_identity_session_pre_auth_expiry');
+      expect(revokedPlan).toContain('Limit');
+      expect(revokedPlan).toContain('idx_identity_session_revoked_pre_auth');
+      expect(populationPlan).toContain('Limit');
+      expect(populationPlan).toContain('10001');
+    } finally {
+      await observer.getRepository(SessionEntity).delete(activeIds);
+      await observer.getRepository(SessionEntity).delete([expired.id, revoked.id]);
+    }
+  });
 });
 
 type Bootstrap = {
@@ -731,6 +873,103 @@ function readRawSetCookie(response: Response): string | undefined {
 
 function sha256(value: string): string {
   return createHash('sha256').update(value, 'utf8').digest('hex');
+}
+
+type TerminalPreAuthState = 'expired' | 'revoked';
+
+async function insertTerminalPreAuthSession(
+  source: DataSource,
+  state: TerminalPreAuthState,
+): Promise<SessionEntity> {
+  const now = new Date();
+  const expired = state === 'expired';
+  return source.getRepository(SessionEntity).save({
+    id: randomUUID(),
+    userId: null,
+    tokenHash: randomBytes(32).toString('hex'),
+    csrfTokenHash: randomBytes(32).toString('hex'),
+    state: expired ? 'pre_auth' : 'revoked',
+    createdAt: new Date(now.getTime() - 20 * 60 * 1000),
+    lastSeenAt: new Date(now.getTime() - 20 * 60 * 1000),
+    absoluteExpiresAt: expired
+      ? new Date(now.getTime() - 10 * 60 * 1000)
+      : new Date(now.getTime() + 10 * 60 * 1000),
+    idleExpiresAt: expired
+      ? new Date(now.getTime() - 10 * 60 * 1000)
+      : new Date(now.getTime() + 10 * 60 * 1000),
+    revokedAt: expired ? null : now,
+  });
+}
+
+async function insertActivePreAuthPopulation(source: DataSource, count: number): Promise<string[]> {
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + 10 * 60 * 1000);
+  const ids: string[] = [];
+  for (let offset = 0; offset < count; offset += 500) {
+    const batchSize = Math.min(500, count - offset);
+    const rows = Array.from({ length: batchSize }, () => {
+      const id = randomUUID();
+      ids.push(id);
+      return {
+        id,
+        userId: null,
+        tokenHash: randomBytes(32).toString('hex'),
+        csrfTokenHash: randomBytes(32).toString('hex'),
+        state: 'pre_auth' as const,
+        createdAt: now,
+        lastSeenAt: now,
+        absoluteExpiresAt: expiresAt,
+        idleExpiresAt: expiresAt,
+        revokedAt: null,
+      };
+    });
+    await source.getRepository(SessionEntity).insert(rows);
+  }
+  return ids;
+}
+
+async function countBootstrapPopulation(source: DataSource, schema: string): Promise<number> {
+  const rows = await source.query(
+    `SELECT count(*)::int AS count FROM "${schema}".identity_sessions WHERE state = 'pre_auth' OR (state = 'revoked' AND user_id IS NULL)`,
+  );
+  const [row] = rows as readonly unknown[];
+  if (typeof row !== 'object' || row === null || Array.isArray(row)) {
+    throw new Error('Unexpected bootstrap population count.');
+  }
+  const value = (row as Record<string, unknown>).count;
+  if (typeof value !== 'number') throw new Error('Unexpected bootstrap population count value.');
+  return value;
+}
+
+async function countBootstrapCleanupEligibility(
+  source: DataSource,
+  schema: string,
+): Promise<number> {
+  const rows = await source.query(
+    `SELECT count(*)::int AS count FROM "${schema}".identity_sessions WHERE (state = 'pre_auth' AND absolute_expires_at <= CURRENT_TIMESTAMP) OR (state = 'revoked' AND user_id IS NULL)`,
+  );
+  const [row] = rows as readonly unknown[];
+  if (typeof row !== 'object' || row === null || Array.isArray(row)) {
+    throw new Error('Unexpected bootstrap cleanup eligibility count.');
+  }
+  const value = (row as Record<string, unknown>).count;
+  if (typeof value !== 'number')
+    throw new Error('Unexpected bootstrap cleanup eligibility count value.');
+  return value;
+}
+
+async function explain(source: DataSource, statement: string): Promise<string> {
+  const rows = await source.query(`EXPLAIN ${statement}`);
+  if (!Array.isArray(rows)) throw new Error('Unexpected PostgreSQL EXPLAIN rows.');
+  const lines = rows.map((row) => {
+    if (typeof row !== 'object' || row === null || Array.isArray(row)) {
+      throw new Error('Unexpected PostgreSQL EXPLAIN row.');
+    }
+    const value = (row as Record<string, unknown>)['QUERY PLAN'];
+    if (typeof value !== 'string') throw new Error('Unexpected PostgreSQL EXPLAIN value.');
+    return value;
+  });
+  return lines.join('\n');
 }
 
 function throttleKey(

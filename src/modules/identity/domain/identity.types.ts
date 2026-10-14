@@ -63,6 +63,16 @@ export interface SessionTransitionResult {
   readonly affectedRows: AffectedRows;
 }
 
+export interface BootstrapPreAuthSessionInput {
+  readonly session: Session;
+  readonly now: Date;
+}
+
+export type BootstrapPreAuthSessionAdmission =
+  | { readonly kind: 'created' }
+  | { readonly kind: 'busy' }
+  | { readonly kind: 'capacity_unavailable' };
+
 export interface ThrottleWindowInput {
   readonly keyHash: string;
   readonly now: Date;

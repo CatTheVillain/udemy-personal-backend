@@ -1,6 +1,8 @@
 import {
   LoginThrottle,
   LoginThrottleLookup,
+  BootstrapPreAuthSessionAdmission,
+  BootstrapPreAuthSessionInput,
   ConsumePreAuthSessionInput,
   RegistrationThrottle,
   RegistrationThrottleLookup,
@@ -29,6 +31,9 @@ export interface SessionRepositoryPort {
   rotateActivePreAuthCsrf(input: RotatePreAuthCsrfInput): Promise<SessionTransitionResult>;
   consumeLockedPreAuth(input: ConsumePreAuthSessionInput): Promise<SessionTransitionResult>;
   revokeActiveSession(input: RevokeActiveSessionInput): Promise<SessionTransitionResult>;
+  admitBootstrapPreAuthSession(
+    input: BootstrapPreAuthSessionInput,
+  ): Promise<BootstrapPreAuthSessionAdmission>;
 }
 
 export interface RegistrationThrottleRepositoryPort {

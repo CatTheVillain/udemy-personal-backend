@@ -26,6 +26,9 @@ import {
 
 const ORIGIN = 'http://localhost:4200';
 const PASSWORD = 'literal valid password';
+let bootstrapApp: INestApplication;
+let bootstrapAdmissions = 0;
+const overflowBootstrapApps: INestApplication[] = [];
 
 describe('Identity password-work HTTP admission', () => {
   let app: INestApplication;
@@ -66,9 +69,12 @@ describe('Identity password-work HTTP admission', () => {
     app = await NestFactory.create(AppModule, { abortOnError: false, logger: false });
     configureApplication(app);
     await app.init();
+    bootstrapApp = app;
+    bootstrapAdmissions = 0;
   });
 
   afterEach(async () => {
+    for (const overflowApp of overflowBootstrapApps.splice(0)) await overflowApp.close();
     if (app !== undefined) await app.close();
   });
 
@@ -273,8 +279,16 @@ function deferred<Value>(): Deferred<Value> {
   };
 }
 
-async function bootstrapCsrf(app: INestApplication): Promise<Bootstrap> {
-  const response = await request(app.getHttpServer()).get('/api/v1/auth/csrf').expect(200);
+async function bootstrapCsrf(_app: INestApplication): Promise<Bootstrap> {
+  if (bootstrapAdmissions === 10) {
+    bootstrapApp = await NestFactory.create(AppModule, { abortOnError: false, logger: false });
+    configureApplication(bootstrapApp);
+    await bootstrapApp.init();
+    overflowBootstrapApps.push(bootstrapApp);
+    bootstrapAdmissions = 0;
+  }
+  const response = await request(bootstrapApp.getHttpServer()).get('/api/v1/auth/csrf').expect(200);
+  bootstrapAdmissions += 1;
   const csrfToken = response.body?.data?.csrfToken;
   if (typeof csrfToken !== 'string') throw new Error('Missing CSRF token.');
   const cookie = response.headers['set-cookie'];

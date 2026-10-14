@@ -8,6 +8,7 @@ import { UserEntity } from '../../modules/identity/infrastructure/persistence/en
 import { InitialIdentityPersistence1760194800000 } from '../../migrations/1760194800000-initial-identity-persistence';
 import { AddIdentityPersistenceInvariants1760194800001 } from '../../migrations/1760194800001-add-identity-persistence-invariants';
 import { AddIdentityThrottleKeyOwners1760270400000 } from '../../migrations/1760270400000-add-identity-throttle-key-owners';
+import { AddIdentityBootstrapRetentionIndex1760356800000 } from '../../migrations/1760356800000-add-identity-bootstrap-retention-index';
 
 const POSTGRES_IDENTIFIER = /^[a-z_][a-z0-9_]{0,62}$/;
 
@@ -37,6 +38,7 @@ export function createIdentityDatabaseOptions(options: IdentityDatabaseOptions):
       InitialIdentityPersistence1760194800000,
       AddIdentityPersistenceInvariants1760194800001,
       AddIdentityThrottleKeyOwners1760270400000,
+      AddIdentityBootstrapRetentionIndex1760356800000,
     ],
   };
 }

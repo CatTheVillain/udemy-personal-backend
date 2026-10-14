@@ -94,6 +94,8 @@ describe('Identity authentication public contract', () => {
       required: false,
     });
     expect(readResponseHeader(readRecord(csrf, 'get'), '200', 'Set-Cookie')).toBeDefined();
+    expect(readResponseHeader(readRecord(csrf, 'get'), '429', 'Retry-After')).toBeDefined();
+    expect(readResponseHeader(readRecord(csrf, 'get'), '503', 'Retry-After')).toBeDefined();
     expect(readResponseHeader(readRecord(register, 'post'), '201', 'Set-Cookie')).toBeDefined();
     expect(readResponseHeader(readRecord(login, 'post'), '200', 'Set-Cookie')).toBeDefined();
     expect(readResponseHeader(readRecord(login, 'post'), '401', 'Set-Cookie')).toBeDefined();

@@ -6,6 +6,7 @@ import { DataSource, QueryRunner } from 'typeorm';
 import { InitialIdentityPersistence1760194800000 } from '../../../src/migrations/1760194800000-initial-identity-persistence';
 import { AddIdentityPersistenceInvariants1760194800001 } from '../../../src/migrations/1760194800001-add-identity-persistence-invariants';
 import { AddIdentityThrottleKeyOwners1760270400000 } from '../../../src/migrations/1760270400000-add-identity-throttle-key-owners';
+import { AddIdentityBootstrapRetentionIndex1760356800000 } from '../../../src/migrations/1760356800000-add-identity-bootstrap-retention-index';
 import { createIdentityDataSource } from '../../../src/shared/database/identity-database-options';
 import {
   createIsolatedPostgresDatabaseOptions,
@@ -52,6 +53,31 @@ describe('Identity throttle key-owner migration', () => {
           [randomUUID(), key('d')],
         ),
       ).resolves.toBeDefined();
+    });
+  });
+
+  it('registers forward-only immutable bootstrap retention indexes', async () => {
+    await withLegacySchema(async (source, runner, plan) => {
+      await new AddIdentityThrottleKeyOwners1760270400000().up(runner);
+      await new AddIdentityBootstrapRetentionIndex1760356800000().up(runner);
+
+      expect(source.migrations.map((migration) => migration.constructor)).toContain(
+        AddIdentityBootstrapRetentionIndex1760356800000,
+      );
+      expect(await readSessionIndexes(runner, plan)).toEqual([
+        expect.objectContaining({
+          indexname: 'idx_identity_session_pre_auth_expiry',
+          indexdef: expect.stringContaining("WHERE ((state)::text = 'pre_auth'::text)"),
+        }),
+        expect.objectContaining({
+          indexname: 'idx_identity_session_revoked_pre_auth',
+          indexdef: expect.stringContaining(
+            "WHERE (((state)::text = 'revoked'::text) AND (user_id IS NULL))",
+          ),
+        }),
+      ]);
+      const definitions = (await readSessionIndexes(runner, plan)).map((index) => index.indexdef);
+      expect(definitions.join('\n')).not.toContain('now()');
     });
   });
 });
@@ -114,6 +140,30 @@ async function readThrottlePreimage(
 
 function key(character: string): string {
   return character.repeat(64);
+}
+
+type SessionIndex = { readonly indexname: string; readonly indexdef: string };
+
+async function readSessionIndexes(
+  runner: QueryRunner,
+  plan: IsolatedPostgresPlan,
+): Promise<readonly SessionIndex[]> {
+  const rows = await runner.query(
+    `SELECT indexname, indexdef FROM pg_indexes WHERE schemaname = $1 AND tablename = 'identity_sessions' AND indexname IN ('idx_identity_session_pre_auth_expiry', 'idx_identity_session_revoked_pre_auth') ORDER BY indexname`,
+    [plan.schemaName],
+  );
+  if (!Array.isArray(rows)) throw new Error('Unexpected identity session index rows.');
+  return rows.map((row) => {
+    if (typeof row !== 'object' || row === null || Array.isArray(row)) {
+      throw new Error('Unexpected identity session index row.');
+    }
+    const indexname = (row as Record<string, unknown>).indexname;
+    const indexdef = (row as Record<string, unknown>).indexdef;
+    if (typeof indexname !== 'string' || typeof indexdef !== 'string') {
+      throw new Error('Unexpected identity session index values.');
+    }
+    return { indexname, indexdef };
+  });
 }
 
 function selectLoopbackPort(): Promise<number> {

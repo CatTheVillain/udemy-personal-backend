@@ -36,6 +36,9 @@ import { Response } from 'express';
 import {
   IdentityAuthenticationFailure,
   IdentityAuthenticationService,
+  CsrfBootstrapOutcome,
+  CsrfBootstrapRejection,
+  InitialPreAuthCheck,
   PreAuthContext,
 } from '../application/identity-authentication.service';
 import { PasswordWorkRejection } from '../application/password-work-limiter';
@@ -84,14 +87,34 @@ export class IdentityAuthController {
     ),
   )
   @ApiForbiddenResponse(problemResponse('Disallowed origin or authenticated session'))
+  @ApiTooManyRequestsResponse(
+    problemResponse(
+      'CSRF bootstrap source quota is exhausted (csrf_bootstrap_rate_limited).',
+      undefined,
+      'Retry time.',
+    ),
+  )
+  @ApiServiceUnavailableResponse(
+    problemResponse(
+      'CSRF bootstrap admission is temporarily unavailable (csrf_bootstrap_unavailable, csrf_bootstrap_busy, or csrf_bootstrap_capacity_unavailable).',
+      undefined,
+      'Advisory retry time.',
+    ),
+  )
   public async bootstrapCsrf(
     @Req() request: IdentityHttpRequest,
     @Res({ passthrough: true }) response: Response,
   ): Promise<CsrfBootstrapResponseDto> {
-    const result = await this.authentication.bootstrapCsrf(
-      readIdentitySessionCookie(request.headers.cookie),
-      request.headers.origin,
-    );
+    let result: CsrfBootstrapOutcome;
+    try {
+      result = await this.authentication.bootstrapCsrf(
+        readIdentitySessionCookie(request.headers.cookie),
+        request.headers.origin,
+        request.socket.remoteAddress,
+      );
+    } catch (error: unknown) {
+      translateAuthenticationFailure(error, response);
+    }
     if ('csrfToken' in result) {
       setIdentitySessionCookie(response, result.sessionToken);
       return new CsrfBootstrapResponseDto(result.csrfToken);
@@ -100,6 +123,7 @@ export class IdentityAuthController {
       clearIdentitySessionCookie(response);
       throw new UnauthorizedException();
     }
+    if (isCsrfBootstrapRejection(result)) throwCsrfBootstrapRejection(result, response);
     throw new ForbiddenException();
   }
 
@@ -242,6 +266,34 @@ function throwPasswordWorkRejection(result: PasswordWorkRejection, response: Res
     throw new PublicProblemException(HttpStatus.SERVICE_UNAVAILABLE, 'password_work_busy');
   }
   throw new PublicProblemException(HttpStatus.SERVICE_UNAVAILABLE, 'password_work_unavailable');
+}
+
+function isCsrfBootstrapRejection(
+  result: InitialPreAuthCheck | CsrfBootstrapRejection,
+): result is CsrfBootstrapRejection {
+  return (
+    result.kind === 'rate_limited' ||
+    result.kind === 'unavailable' ||
+    result.kind === 'busy' ||
+    result.kind === 'capacity_unavailable'
+  );
+}
+
+function throwCsrfBootstrapRejection(result: CsrfBootstrapRejection, response: Response): never {
+  response.setHeader('Retry-After', String(result.retryAfterSeconds));
+  if (result.kind === 'rate_limited') {
+    throw new PublicProblemException(HttpStatus.TOO_MANY_REQUESTS, 'csrf_bootstrap_rate_limited');
+  }
+  if (result.kind === 'unavailable') {
+    throw new PublicProblemException(HttpStatus.SERVICE_UNAVAILABLE, 'csrf_bootstrap_unavailable');
+  }
+  if (result.kind === 'busy') {
+    throw new PublicProblemException(HttpStatus.SERVICE_UNAVAILABLE, 'csrf_bootstrap_busy');
+  }
+  throw new PublicProblemException(
+    HttpStatus.SERVICE_UNAVAILABLE,
+    'csrf_bootstrap_capacity_unavailable',
+  );
 }
 
 function problemResponse(

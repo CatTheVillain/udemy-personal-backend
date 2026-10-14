@@ -29,6 +29,17 @@ export function createPasswordWorkSourceKey(
     .digest('hex');
 }
 
+export function createCsrfBootstrapSourceKey(
+  config: IdentityAuthConfig,
+  remoteAddress: string | undefined,
+): string | null {
+  const trustedAddress = canonicalizeTrustedAddress(remoteAddress);
+  if (trustedAddress === null) return null;
+  return createHmac('sha256', config.throttleHmacSecret)
+    .update(`csrf-bootstrap-source\u0000${trustedAddress}`, 'utf8')
+    .digest('hex');
+}
+
 function canonicalizeTrustedAddress(value: string | undefined): string | null {
   if (value === undefined || isIP(value) === 0) return null;
   if (value.startsWith('::ffff:')) {

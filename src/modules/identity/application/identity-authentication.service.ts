@@ -8,12 +8,22 @@ import { IdentityAuthConfig } from './identity-auth.config';
 import { IDENTITY_CLOCK, IdentityClock } from './identity-clock';
 import { PasswordWorkLimiter, PasswordWorkRejection } from './password-work-limiter';
 import {
+  CsrfBootstrapLimiter,
+  CsrfBootstrapRateLimited,
+  CsrfBootstrapUnavailable,
+} from './csrf-bootstrap-limiter';
+import {
   IDENTITY_TRANSACTION_PORT,
   IdentityTransactionPort,
   IdentityTransactionScope,
 } from './ports/identity.ports';
 import { ScryptPasswordHasher } from './password-hasher';
-import { createPasswordWorkSourceKey, createThrottleKey, ThrottlePurpose } from './throttle-key';
+import {
+  createCsrfBootstrapSourceKey,
+  createPasswordWorkSourceKey,
+  createThrottleKey,
+  ThrottlePurpose,
+} from './throttle-key';
 import { LOGIN_FAILURE_LIMIT, Session } from '../domain/identity.types';
 
 const PRE_AUTH_LIFETIME_MS = 10 * 60 * 1000;
@@ -38,6 +48,15 @@ export interface CsrfBootstrapResult {
   readonly sessionToken: string;
 }
 
+export type CsrfBootstrapRejection =
+  | CsrfBootstrapRateLimited
+  | CsrfBootstrapUnavailable
+  | { readonly kind: 'busy'; readonly retryAfterSeconds: 1 }
+  | { readonly kind: 'capacity_unavailable'; readonly retryAfterSeconds: 60 };
+
+export type CsrfBootstrapOutcome =
+  CsrfBootstrapResult | InitialPreAuthCheck | CsrfBootstrapRejection;
+
 export interface AuthenticatedSessionResult {
   readonly sessionToken: string;
 }
@@ -55,6 +74,7 @@ export type InitialPreAuthCheck =
 export class IdentityAuthenticationService {
   private readonly passwordHasher = new ScryptPasswordHasher();
   private readonly passwordWorkLimiter = new PasswordWorkLimiter();
+  private readonly csrfBootstrapLimiter = new CsrfBootstrapLimiter();
 
   public constructor(
     @Inject(IDENTITY_TRANSACTION_PORT) private readonly transactions: IdentityTransactionPort,
@@ -65,11 +85,12 @@ export class IdentityAuthenticationService {
   public async bootstrapCsrf(
     cookieValue: string | undefined,
     origin: string | undefined,
-  ): Promise<CsrfBootstrapResult | InitialPreAuthCheck> {
+    remoteAddress: string | undefined,
+  ): Promise<CsrfBootstrapOutcome> {
     if (origin !== undefined && !this.config.corsAllowedOrigins.includes(origin)) {
       return { kind: 'forbidden' };
     }
-    if (cookieValue === undefined) return this.createPreAuthSession();
+    if (cookieValue === undefined) return this.createPreAuthSession(remoteAddress);
     if (!isOpaqueIdentityToken(cookieValue)) return { kind: 'clear_and_unauthorized' };
 
     const tokenHash = sha256Hex(cookieValue);
@@ -206,25 +227,39 @@ export class IdentityAuthenticationService {
     });
   }
 
-  private async createPreAuthSession(): Promise<CsrfBootstrapResult> {
+  private async createPreAuthSession(
+    remoteAddress: string | undefined,
+  ): Promise<CsrfBootstrapResult | CsrfBootstrapRejection> {
+    const sourceKey = createCsrfBootstrapSourceKey(this.config, remoteAddress);
+    if (sourceKey === null) throw new IdentityAuthenticationFailure('forbidden');
+    const localAdmission = this.csrfBootstrapLimiter.tryStart(sourceKey);
+    if (localAdmission.kind !== 'started') return localAdmission;
+
     const now = this.clock.now();
     const sessionToken = createOpaqueIdentityToken();
     const csrfToken = createOpaqueIdentityToken();
-    await this.transactions.run({
+    const admission = await this.transactions.run({
       execute: async (scope) =>
-        scope.sessions.insert({
-          id: randomUUID(),
-          userId: null,
-          tokenHash: sha256Hex(sessionToken),
-          csrfTokenHash: sha256Hex(csrfToken),
-          state: 'pre_auth',
-          createdAt: now,
-          lastSeenAt: now,
-          absoluteExpiresAt: plusMilliseconds(now, PRE_AUTH_LIFETIME_MS),
-          idleExpiresAt: plusMilliseconds(now, PRE_AUTH_LIFETIME_MS),
-          revokedAt: null,
+        scope.sessions.admitBootstrapPreAuthSession({
+          now,
+          session: {
+            id: randomUUID(),
+            userId: null,
+            tokenHash: sha256Hex(sessionToken),
+            csrfTokenHash: sha256Hex(csrfToken),
+            state: 'pre_auth',
+            createdAt: now,
+            lastSeenAt: now,
+            absoluteExpiresAt: plusMilliseconds(now, PRE_AUTH_LIFETIME_MS),
+            idleExpiresAt: plusMilliseconds(now, PRE_AUTH_LIFETIME_MS),
+            revokedAt: null,
+          },
         }),
     });
+    if (admission.kind === 'busy') return { kind: 'busy', retryAfterSeconds: 1 };
+    if (admission.kind === 'capacity_unavailable') {
+      return { kind: 'capacity_unavailable', retryAfterSeconds: 60 };
+    }
     return { csrfToken, sessionToken };
   }
 
