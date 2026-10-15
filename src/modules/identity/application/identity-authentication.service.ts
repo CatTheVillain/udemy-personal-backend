@@ -24,7 +24,7 @@ import {
   createThrottleKey,
   ThrottlePurpose,
 } from './throttle-key';
-import { LOGIN_FAILURE_LIMIT, Session } from '../domain/identity.types';
+import { LOGIN_FAILURE_LIMIT, Session, ThrottleAdmissionRejection } from '../domain/identity.types';
 
 const PRE_AUTH_LIFETIME_MS = 10 * 60 * 1000;
 const AUTH_IDLE_LIFETIME_MS = 8 * 60 * 60 * 1000;
@@ -62,8 +62,9 @@ export interface AuthenticatedSessionResult {
 }
 
 export type RegistrationResult =
-  'registered' | 'duplicate' | 'rate_limited' | PasswordWorkRejection;
-export type LoginResult = 'invalid_credentials' | 'rate_limited' | PasswordWorkRejection;
+  'registered' | 'duplicate' | 'rate_limited' | PasswordWorkRejection | ThrottleAdmissionRejection;
+export type LoginResult =
+  'invalid_credentials' | 'rate_limited' | PasswordWorkRejection | ThrottleAdmissionRejection;
 export type InitialPreAuthCheck =
   | { readonly kind: 'accepted'; readonly context: PreAuthContext }
   | { readonly kind: 'clear_and_unauthorized' }
@@ -72,7 +73,6 @@ export type InitialPreAuthCheck =
 
 @Injectable()
 export class IdentityAuthenticationService {
-  private readonly passwordHasher = new ScryptPasswordHasher();
   private readonly passwordWorkLimiter = new PasswordWorkLimiter();
   private readonly csrfBootstrapLimiter = new CsrfBootstrapLimiter();
 
@@ -80,6 +80,7 @@ export class IdentityAuthenticationService {
     @Inject(IDENTITY_TRANSACTION_PORT) private readonly transactions: IdentityTransactionPort,
     @Inject(IDENTITY_CLOCK) private readonly clock: IdentityClock,
     private readonly config: IdentityAuthConfig,
+    private readonly passwordHasher: ScryptPasswordHasher,
   ) {}
 
   public async bootstrapCsrf(
@@ -159,7 +160,9 @@ export class IdentityAuthenticationService {
           now,
           expiresAt: plusMilliseconds(now, THROTTLE_WINDOW_MS),
         });
-        if (!admitted.admitted) return 'rate_limited';
+        if (admitted.kind !== 'admitted') {
+          return admitted.kind === 'rate_limited' ? 'rate_limited' : admitted;
+        }
 
         const passwordWork = this.passwordWorkLimiter.tryStart(passwordWorkSourceKey);
         if (passwordWork.kind !== 'started') return passwordWork;
@@ -177,7 +180,7 @@ export class IdentityAuthenticationService {
           updatedAt: now,
         });
         if (!inserted) return 'duplicate';
-        await consumeCurrentPreAuth(scope, preAuth, now);
+        await consumeCurrentPreAuth(scope, preAuth);
         return 'registered';
       },
     });
@@ -200,6 +203,7 @@ export class IdentityAuthenticationService {
           now,
           expiresAt: plusMilliseconds(now, THROTTLE_WINDOW_MS),
         });
+        if ('kind' in throttle) return throttle;
         if (throttle.failureCount >= LOGIN_FAILURE_LIMIT) return 'rate_limited';
         const user = await scope.users.findByNormalizedEmail(canonicalEmail);
         const passwordWork = this.passwordWorkLimiter.tryStart(passwordWorkSourceKey);
@@ -215,11 +219,14 @@ export class IdentityAuthenticationService {
         }
         if (!verified || user === null) {
           const failure = await scope.loginThrottles.consumeFailure(throttleKey, now);
-          return failure.admitted ? 'invalid_credentials' : 'rate_limited';
+          if (failure.kind === 'rate_limited') return 'rate_limited';
+          if (failure.kind !== 'admitted') return failure;
+          await verifyCurrentPreAuth(scope, preAuth);
+          return 'invalid_credentials';
         }
 
         await scope.loginThrottles.resetFailures(throttleKey, now);
-        await consumeCurrentPreAuth(scope, preAuth, now);
+        await consumeCurrentPreAuth(scope, preAuth);
         const sessionToken = createOpaqueIdentityToken();
         await scope.sessions.insert(createAuthenticatedSession(user.id, sessionToken, now));
         return { sessionToken };
@@ -316,13 +323,25 @@ function assertCurrentPreAuth(session: Session | null, preAuth: PreAuthContext, 
 async function consumeCurrentPreAuth(
   scope: IdentityTransactionScope,
   preAuth: PreAuthContext,
-  now: Date,
 ): Promise<void> {
   const result = await scope.sessions.consumeLockedPreAuth({
     id: preAuth.sessionId,
     tokenHash: preAuth.tokenHash,
     csrfTokenHash: preAuth.csrfTokenHash,
-    now,
+  });
+  if (result.affectedRows !== 1) {
+    throw new IdentityAuthenticationFailure('unauthorized');
+  }
+}
+
+async function verifyCurrentPreAuth(
+  scope: IdentityTransactionScope,
+  preAuth: PreAuthContext,
+): Promise<void> {
+  const result = await scope.sessions.verifyCurrentLockedPreAuth({
+    id: preAuth.sessionId,
+    tokenHash: preAuth.tokenHash,
+    csrfTokenHash: preAuth.csrfTokenHash,
   });
   if (result.affectedRows !== 1) {
     throw new IdentityAuthenticationFailure('unauthorized');

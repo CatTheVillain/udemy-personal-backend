@@ -7,7 +7,11 @@ import { InitialIdentityPersistence1760194800000 } from '../../../src/migrations
 import { AddIdentityPersistenceInvariants1760194800001 } from '../../../src/migrations/1760194800001-add-identity-persistence-invariants';
 import { AddIdentityThrottleKeyOwners1760270400000 } from '../../../src/migrations/1760270400000-add-identity-throttle-key-owners';
 import { AddIdentityBootstrapRetentionIndex1760356800000 } from '../../../src/migrations/1760356800000-add-identity-bootstrap-retention-index';
-import { createIdentityDataSource } from '../../../src/shared/database/identity-database-options';
+import { AddIdentityThrottleRetentionIndexes1760443200000 } from '../../../src/migrations/1760443200000-add-identity-throttle-retention-indexes';
+import {
+  createIdentityDataSource,
+  createIdentityDatabaseOptions,
+} from '../../../src/shared/database/identity-database-options';
 import {
   createIsolatedPostgresDatabaseOptions,
   createIsolatedPostgresEnvironment,
@@ -80,6 +84,77 @@ describe('Identity throttle key-owner migration', () => {
       expect(definitions.join('\n')).not.toContain('now()');
     });
   });
+
+  it('discovers and applies the registered throttle-retention migration after preserved owner rows', async () => {
+    const plan = createIsolatedPostgresPlan(
+      createIsolatedPostgresEnvironment(
+        randomBytes(32).toString('hex'),
+        await selectLoopbackPort(),
+      ),
+    );
+    const run = await startIsolatedPostgres(plan);
+    const options = createIsolatedPostgresDatabaseOptions(plan);
+    const registered = createIdentityDataSource(options);
+    const legacy = new DataSource({
+      ...createIdentityDatabaseOptions(options),
+      migrations: [
+        InitialIdentityPersistence1760194800000,
+        AddIdentityPersistenceInvariants1760194800001,
+        AddIdentityThrottleKeyOwners1760270400000,
+        AddIdentityBootstrapRetentionIndex1760356800000,
+      ],
+    });
+    let runner: QueryRunner | undefined;
+    try {
+      await legacy.initialize();
+      await legacy.query(`CREATE SCHEMA "${plan.schemaName}"`);
+      await legacy.runMigrations();
+      runner = legacy.createQueryRunner();
+      await runner.connect();
+      await seedThrottleRows(runner, plan, 'unique');
+      await runner.release();
+      runner = undefined;
+      await legacy.destroy();
+
+      await registered.initialize();
+      expect(registered.migrations.map((migration) => migration.constructor)).toEqual([
+        InitialIdentityPersistence1760194800000,
+        AddIdentityPersistenceInvariants1760194800001,
+        AddIdentityThrottleKeyOwners1760270400000,
+        AddIdentityBootstrapRetentionIndex1760356800000,
+        AddIdentityThrottleRetentionIndexes1760443200000,
+      ]);
+      await registered.runMigrations();
+      expect(await readThrottleRows(registered, plan)).toHaveLength(4);
+      await expect(
+        registered.query(
+          `INSERT INTO "${plan.schemaName}".identity_registration_throttles (id, key_hash, window_started_at, expires_at, attempt_count) VALUES ($1, $2, NOW(), NOW() + INTERVAL '15 minutes', 0)`,
+          [randomUUID(), key('a')],
+        ),
+      ).rejects.toThrow();
+      await expect(
+        registered.query(
+          `INSERT INTO "${plan.schemaName}".identity_login_throttles (id, key_hash, window_started_at, expires_at, failure_count) VALUES ($1, $2, NOW(), NOW() + INTERVAL '15 minutes', 0)`,
+          [randomUUID(), key('c')],
+        ),
+      ).rejects.toThrow();
+      expect(await readThrottleIndexes(registered, plan)).toEqual([
+        expect.objectContaining({
+          indexname: 'idx_identity_login_throttle_expiry',
+          indexdef: expect.stringContaining('(expires_at, id)'),
+        }),
+        expect.objectContaining({
+          indexname: 'idx_identity_registration_throttle_expiry',
+          indexdef: expect.stringContaining('(expires_at, id)'),
+        }),
+      ]);
+    } finally {
+      if (runner !== undefined) await runner.release();
+      if (legacy.isInitialized) await legacy.destroy();
+      if (registered.isInitialized) await registered.destroy();
+      await run.cleanup();
+    }
+  });
 });
 
 type LegacyThrottleSeedMode = 'unique' | 'duplicate';
@@ -136,6 +211,39 @@ async function readThrottlePreimage(
   return runner.query(
     `SELECT 'registration' AS table_name, key_hash, attempt_count AS count FROM ${plan.schemaName}.identity_registration_throttles UNION ALL SELECT 'login' AS table_name, key_hash, failure_count AS count FROM ${plan.schemaName}.identity_login_throttles ORDER BY table_name, key_hash, count`,
   );
+}
+
+async function readThrottleRows(
+  source: DataSource,
+  plan: IsolatedPostgresPlan,
+): Promise<readonly unknown[]> {
+  return source.query(
+    `SELECT key_hash FROM "${plan.schemaName}".identity_registration_throttles UNION ALL SELECT key_hash FROM "${plan.schemaName}".identity_login_throttles`,
+  );
+}
+
+type ThrottleIndex = { readonly indexname: string; readonly indexdef: string };
+
+async function readThrottleIndexes(
+  source: DataSource,
+  plan: IsolatedPostgresPlan,
+): Promise<readonly ThrottleIndex[]> {
+  const rows = await source.query(
+    `SELECT indexname, indexdef FROM pg_indexes WHERE schemaname = $1 AND indexname IN ('idx_identity_login_throttle_expiry', 'idx_identity_registration_throttle_expiry') ORDER BY indexname`,
+    [plan.schemaName],
+  );
+  if (!Array.isArray(rows)) throw new Error('Unexpected throttle index rows.');
+  return rows.map((row) => {
+    if (typeof row !== 'object' || row === null || Array.isArray(row)) {
+      throw new Error('Unexpected throttle index row.');
+    }
+    const indexname = (row as Record<string, unknown>).indexname;
+    const indexdef = (row as Record<string, unknown>).indexdef;
+    if (typeof indexname !== 'string' || typeof indexdef !== 'string') {
+      throw new Error('Unexpected throttle index values.');
+    }
+    return { indexname, indexdef };
+  });
 }
 
 function key(character: string): string {

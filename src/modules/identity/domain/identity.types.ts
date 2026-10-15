@@ -56,7 +56,12 @@ export interface ConsumePreAuthSessionInput {
   readonly id: string;
   readonly tokenHash: string;
   readonly csrfTokenHash: string;
-  readonly now: Date;
+}
+
+export interface VerifyCurrentPreAuthInput {
+  readonly id: string;
+  readonly tokenHash: string;
+  readonly csrfTokenHash: string;
 }
 
 export interface SessionTransitionResult {
@@ -79,9 +84,12 @@ export interface ThrottleWindowInput {
   readonly expiresAt: Date;
 }
 
-export interface ThrottleAdmissionResult {
-  readonly admitted: boolean;
-}
+export type ThrottleAdmissionResult =
+  { readonly kind: 'admitted' } | { readonly kind: 'rate_limited' } | ThrottleAdmissionRejection;
+
+export type ThrottleAdmissionRejection =
+  | { readonly kind: 'throttle_busy'; readonly retryAfterSeconds: 1 }
+  | { readonly kind: 'throttle_capacity_unavailable'; readonly retryAfterSeconds: 60 };
 
 export interface RegistrationThrottleLookup {
   readonly keyHash: string;

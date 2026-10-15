@@ -3,6 +3,7 @@ import { EntityManager } from 'typeorm';
 import { SessionRepositoryPort } from '../../../application/ports/identity.ports';
 import {
   ConsumePreAuthSessionInput,
+  VerifyCurrentPreAuthInput,
   BootstrapPreAuthSessionAdmission,
   BootstrapPreAuthSessionInput,
   RevokeActiveSessionInput,
@@ -71,16 +72,35 @@ export class TypeOrmSessionRepository implements SessionRepositoryPort {
     const result = await this.entityManager
       .createQueryBuilder()
       .update(SessionEntity)
-      .set({ state: 'revoked', revokedAt: input.now })
+      .set({ state: 'revoked', revokedAt: () => 'clock_timestamp()' })
       .where('id = :id', { id: input.id })
       .andWhere('token_hash = :tokenHash', { tokenHash: input.tokenHash })
       .andWhere('csrf_token_hash = :csrfTokenHash', { csrfTokenHash: input.csrfTokenHash })
       .andWhere("state = 'pre_auth'")
       .andWhere('revoked_at IS NULL')
-      .andWhere('absolute_expires_at > :now', { now: input.now })
-      .andWhere('idle_expires_at > :now', { now: input.now })
+      .andWhere('absolute_expires_at > clock_timestamp()')
+      .andWhere('idle_expires_at > clock_timestamp()')
       .execute();
     return toSessionTransitionResult(result.affected);
+  }
+
+  public async verifyCurrentLockedPreAuth(
+    input: VerifyCurrentPreAuthInput,
+  ): Promise<SessionTransitionResult> {
+    const table = this.entityManager.getRepository(SessionEntity).metadata.tablePath;
+    const rows = await this.entityManager.query<readonly unknown[]>(
+      `SELECT 1 FROM ${table}
+       WHERE id = $1
+         AND token_hash = $2
+         AND csrf_token_hash = $3
+         AND state = 'pre_auth'
+         AND revoked_at IS NULL
+         AND absolute_expires_at > clock_timestamp()
+         AND idle_expires_at > clock_timestamp()
+       FOR UPDATE`,
+      [input.id, input.tokenHash, input.csrfTokenHash],
+    );
+    return { affectedRows: rows.length === 0 ? 0 : 1 };
   }
 
   public async revokeActiveSession(
@@ -89,13 +109,13 @@ export class TypeOrmSessionRepository implements SessionRepositoryPort {
     const result = await this.entityManager
       .createQueryBuilder()
       .update(SessionEntity)
-      .set({ state: 'revoked', revokedAt: input.now })
+      .set({ state: 'revoked', revokedAt: () => 'clock_timestamp()' })
       .where('id = :id', { id: input.id })
       .andWhere('token_hash = :tokenHash', { tokenHash: input.tokenHash })
       .andWhere("state IN ('pre_auth', 'authenticated')")
       .andWhere('revoked_at IS NULL')
-      .andWhere('absolute_expires_at > :now', { now: input.now })
-      .andWhere('idle_expires_at > :now', { now: input.now })
+      .andWhere('absolute_expires_at > clock_timestamp()')
+      .andWhere('idle_expires_at > clock_timestamp()')
       .execute();
     return toSessionTransitionResult(result.affected);
   }

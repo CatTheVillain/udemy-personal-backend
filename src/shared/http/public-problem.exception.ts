@@ -8,6 +8,8 @@ export type PublicProblemCode =
   | 'password_work_rate_limited'
   | 'password_work_busy'
   | 'password_work_unavailable'
+  | 'throttle_busy'
+  | 'throttle_capacity_unavailable'
   | 'csrf_bootstrap_rate_limited'
   | 'csrf_bootstrap_unavailable'
   | 'csrf_bootstrap_busy'

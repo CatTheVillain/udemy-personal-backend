@@ -4,12 +4,14 @@ import {
   BootstrapPreAuthSessionAdmission,
   BootstrapPreAuthSessionInput,
   ConsumePreAuthSessionInput,
+  VerifyCurrentPreAuthInput,
   RegistrationThrottle,
   RegistrationThrottleLookup,
   RevokeActiveSessionInput,
   RotatePreAuthCsrfInput,
   Session,
   SessionTransitionResult,
+  ThrottleAdmissionRejection,
   ThrottleAdmissionResult,
   ThrottleWindowInput,
   User,
@@ -30,6 +32,7 @@ export interface SessionRepositoryPort {
   findLockedById(id: string): Promise<Session | null>;
   rotateActivePreAuthCsrf(input: RotatePreAuthCsrfInput): Promise<SessionTransitionResult>;
   consumeLockedPreAuth(input: ConsumePreAuthSessionInput): Promise<SessionTransitionResult>;
+  verifyCurrentLockedPreAuth(input: VerifyCurrentPreAuthInput): Promise<SessionTransitionResult>;
   revokeActiveSession(input: RevokeActiveSessionInput): Promise<SessionTransitionResult>;
   admitBootstrapPreAuthSession(
     input: BootstrapPreAuthSessionInput,
@@ -45,7 +48,7 @@ export interface RegistrationThrottleRepositoryPort {
 export interface LoginThrottleRepositoryPort {
   findByKeyAndWindow(lookup: LoginThrottleLookup): Promise<LoginThrottle | null>;
   save(throttle: LoginThrottle): Promise<void>;
-  acquireForLogin(input: ThrottleWindowInput): Promise<LoginThrottle>;
+  acquireForLogin(input: ThrottleWindowInput): Promise<LoginThrottle | ThrottleAdmissionRejection>;
   consumeFailure(keyHash: string, now: Date): Promise<ThrottleAdmissionResult>;
   resetFailures(keyHash: string, now: Date): Promise<void>;
 }

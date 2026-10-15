@@ -9,6 +9,7 @@ import { InitialIdentityPersistence1760194800000 } from '../../migrations/176019
 import { AddIdentityPersistenceInvariants1760194800001 } from '../../migrations/1760194800001-add-identity-persistence-invariants';
 import { AddIdentityThrottleKeyOwners1760270400000 } from '../../migrations/1760270400000-add-identity-throttle-key-owners';
 import { AddIdentityBootstrapRetentionIndex1760356800000 } from '../../migrations/1760356800000-add-identity-bootstrap-retention-index';
+import { AddIdentityThrottleRetentionIndexes1760443200000 } from '../../migrations/1760443200000-add-identity-throttle-retention-indexes';
 
 const POSTGRES_IDENTIFIER = /^[a-z_][a-z0-9_]{0,62}$/;
 
@@ -39,6 +40,7 @@ export function createIdentityDatabaseOptions(options: IdentityDatabaseOptions):
       AddIdentityPersistenceInvariants1760194800001,
       AddIdentityThrottleKeyOwners1760270400000,
       AddIdentityBootstrapRetentionIndex1760356800000,
+      AddIdentityThrottleRetentionIndexes1760443200000,
     ],
   };
 }

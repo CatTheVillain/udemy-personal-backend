@@ -3,6 +3,7 @@ import { createServer } from 'node:net';
 
 import { INestApplication } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import { DocumentBuilder, OpenAPIObject, SwaggerModule } from '@nestjs/swagger';
 import request, { Response } from 'supertest';
 import { DataSource } from 'typeorm';
 
@@ -160,7 +161,7 @@ describe('Identity HTTP registration and login', () => {
     expect(limitedResponse.body.code).toBe('registration_rate_limited');
   });
 
-  it('serializes same canonical-email registration to one account, one conflict, and two durable admissions', async () => {
+  it('returns public busy for a contested first-seen registration key without creating a second admission', async () => {
     const first = await bootstrapCsrf(app);
     const second = await bootstrapCsrf(app);
     const responses = await Promise.all([
@@ -179,7 +180,7 @@ describe('Identity HTTP registration and login', () => {
         .send({ email: 'parallel@example.test', password: PASSWORD })
         .then((response) => response),
     ]);
-    expect(responses.map((response) => response.status).sort()).toEqual([201, 409]);
+    expect(responses.map((response) => response.status).sort()).toEqual([201, 503]);
     expect(
       await observer
         .getRepository(UserEntity)
@@ -194,7 +195,7 @@ describe('Identity HTTP registration and login', () => {
     if (key === null) throw new Error('Expected loopback registration throttle key.');
     expect(
       await observer.getRepository(RegistrationThrottleEntity).findOneByOrFail({ keyHash: key }),
-    ).toMatchObject({ attemptCount: 2 });
+    ).toMatchObject({ attemptCount: 1 });
     for (const receipt of [
       { bootstrap: first, response: responses[0] },
       { bootstrap: second, response: responses[1] },
@@ -207,12 +208,16 @@ describe('Identity HTTP registration and login', () => {
       if (receipt.response.status === 201) {
         expect(session).toMatchObject({ state: 'revoked', revokedAt: expect.any(Date) });
       } else {
+        expect(receipt.response.body.code).toBe('throttle_busy');
+        expect(receipt.response.headers['retry-after']).toBe('1');
+        expect(receipt.response.headers['content-type']).toContain('application/problem+json');
+        expect(receipt.response.headers['access-control-expose-headers']).toContain('Retry-After');
         expect(session).toMatchObject({ state: 'pre_auth', revokedAt: null });
       }
     }
   });
 
-  it('uses canonical email and socket address for durable registration keys despite forwarded headers', async () => {
+  it('uses canonical email and socket address for one first-seen registration admission despite forwarded headers', async () => {
     const attempts = [
       { email: ' Socket@Example.Test ', forwarded: '203.0.113.1' },
       { email: 'socket@example.test', forwarded: '198.51.100.2' },
@@ -235,7 +240,7 @@ describe('Identity HTTP registration and login', () => {
           .then((response) => response);
       }),
     );
-    expect(requests.map((response) => response.status).sort()).toEqual([201, 409, 409]);
+    expect(requests.map((response) => response.status).sort()).toEqual([201, 503, 503]);
     const key = createThrottleKey(
       IdentityAuthConfig.from(process.env),
       'registration',
@@ -245,7 +250,13 @@ describe('Identity HTTP registration and login', () => {
     if (key === null) throw new Error('Expected loopback registration throttle key.');
     expect(
       await observer.getRepository(RegistrationThrottleEntity).findOneByOrFail({ keyHash: key }),
-    ).toMatchObject({ attemptCount: 3 });
+    ).toMatchObject({ attemptCount: 1 });
+    for (const response of requests.filter((response) => response.status === 503)) {
+      expect(response.body.code).toBe('throttle_busy');
+      expect(response.headers['retry-after']).toBe('1');
+      expect(response.headers['content-type']).toContain('application/problem+json');
+      expect(response.headers['access-control-expose-headers']).toContain('Retry-After');
+    }
   });
 
   it('persists the literal HTTP password without Unicode normalization', async () => {
@@ -313,6 +324,150 @@ describe('Identity HTTP registration and login', () => {
         tokenHash: sha256(cookieValue(valid.cookie)),
       }),
     ).toMatchObject({ state: 'pre_auth', revokedAt: null });
+  });
+
+  it('publishes every auth Problem Details response with its exact media type, description, and headers', () => {
+    const document: OpenAPIObject = SwaggerModule.createDocument(
+      app,
+      new DocumentBuilder().setTitle('Udemy Personal Backend').build(),
+    );
+    const expected = [
+      {
+        path: '/api/v1/auth/csrf',
+        method: 'get' as const,
+        status: '401',
+        description:
+          'Missing, invalid, expired, or revoked pre-auth session; clears the supplied cookie.',
+        headers: ['Set-Cookie'],
+      },
+      {
+        path: '/api/v1/auth/csrf',
+        method: 'get' as const,
+        status: '403',
+        description: 'Disallowed origin or authenticated session',
+        headers: [],
+      },
+      {
+        path: '/api/v1/auth/csrf',
+        method: 'get' as const,
+        status: '429',
+        description: 'CSRF bootstrap source quota is exhausted (csrf_bootstrap_rate_limited).',
+        headers: ['Retry-After'],
+      },
+      {
+        path: '/api/v1/auth/csrf',
+        method: 'get' as const,
+        status: '503',
+        description:
+          'CSRF bootstrap admission is temporarily unavailable (csrf_bootstrap_unavailable, csrf_bootstrap_busy, or csrf_bootstrap_capacity_unavailable).',
+        headers: ['Retry-After'],
+      },
+      {
+        path: '/api/v1/auth/register',
+        method: 'post' as const,
+        status: '400',
+        description: 'Invalid request body',
+        headers: [],
+      },
+      {
+        path: '/api/v1/auth/register',
+        method: 'post' as const,
+        status: '401',
+        description: 'Invalid pre-auth session; clears the supplied cookie.',
+        headers: ['Set-Cookie'],
+      },
+      {
+        path: '/api/v1/auth/register',
+        method: 'post' as const,
+        status: '403',
+        description: 'Origin or CSRF validation failed',
+        headers: [],
+      },
+      {
+        path: '/api/v1/auth/register',
+        method: 'post' as const,
+        status: '409',
+        description: 'The email is already registered',
+        headers: [],
+      },
+      {
+        path: '/api/v1/auth/register',
+        method: 'post' as const,
+        status: '429',
+        description: 'Registration or password-work throttle is exhausted',
+        headers: ['Retry-After'],
+      },
+      {
+        path: '/api/v1/auth/register',
+        method: 'post' as const,
+        status: '503',
+        description: 'Password-work or durable throttle capacity is temporarily unavailable',
+        headers: ['Retry-After'],
+      },
+      {
+        path: '/api/v1/auth/login',
+        method: 'post' as const,
+        status: '400',
+        description: 'Invalid request body',
+        headers: [],
+      },
+      {
+        path: '/api/v1/auth/login',
+        method: 'post' as const,
+        status: '401',
+        description:
+          'Credentials are invalid or pre-auth is invalid. The cookie is cleared only for invalid pre-auth.',
+        headers: ['Set-Cookie'],
+      },
+      {
+        path: '/api/v1/auth/login',
+        method: 'post' as const,
+        status: '403',
+        description: 'Origin or CSRF validation failed',
+        headers: [],
+      },
+      {
+        path: '/api/v1/auth/login',
+        method: 'post' as const,
+        status: '429',
+        description: 'Login or password-work throttle is exhausted',
+        headers: ['Retry-After'],
+      },
+      {
+        path: '/api/v1/auth/login',
+        method: 'post' as const,
+        status: '503',
+        description: 'Password-work or durable throttle capacity is temporarily unavailable',
+        headers: ['Retry-After'],
+      },
+    ] as const;
+
+    for (const expectedResponse of expected) {
+      const operation = document.paths[expectedResponse.path]?.[expectedResponse.method];
+      const response = operation?.responses[expectedResponse.status];
+      if (response === undefined || '$ref' in response) {
+        throw new Error(
+          `Missing inline ${expectedResponse.status} response for ${expectedResponse.path}.`,
+        );
+      }
+      expect(response.description).toBe(expectedResponse.description);
+      expect(response.content?.['application/problem+json']?.schema).toEqual({
+        $ref: '#/components/schemas/ProblemDetailsDto',
+      });
+      expect(response.content?.['application/json']).toBeUndefined();
+      expect(Object.keys(response.headers ?? {}).sort()).toEqual(
+        [...expectedResponse.headers].sort(),
+      );
+      for (const headerName of expectedResponse.headers) {
+        const header = response.headers?.[headerName];
+        if (header === undefined || '$ref' in header) {
+          throw new Error(
+            `Missing ${headerName} header for ${expectedResponse.path} ${expectedResponse.status}.`,
+          );
+        }
+        expect(header.schema).toMatchObject({ type: 'string' });
+      }
+    }
   });
 });
 

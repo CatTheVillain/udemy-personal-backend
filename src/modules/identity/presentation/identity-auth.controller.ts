@@ -42,6 +42,7 @@ import {
   PreAuthContext,
 } from '../application/identity-authentication.service';
 import { PasswordWorkRejection } from '../application/password-work-limiter';
+import { ThrottleAdmissionRejection } from '../domain/identity.types';
 import { ProblemDetailsDto } from '../../../shared/http/problem-details';
 import { PublicProblemException } from '../../../shared/http/public-problem.exception';
 import { AuthEmailPasswordRequestDto } from './dto/auth-email-password.request.dto';
@@ -155,7 +156,7 @@ export class IdentityAuthController {
   )
   @ApiServiceUnavailableResponse(
     problemResponse(
-      'Password-work capacity is temporarily unavailable',
+      'Password-work or durable throttle capacity is temporarily unavailable',
       undefined,
       'Advisory retry time.',
     ),
@@ -174,6 +175,7 @@ export class IdentityAuthController {
       if (result === 'rate_limited') {
         throw new PublicProblemException(HttpStatus.TOO_MANY_REQUESTS, 'registration_rate_limited');
       }
+      if (isThrottleAdmissionRejection(result)) throwThrottleAdmissionRejection(result, response);
       if (typeof result !== 'string') throwPasswordWorkRejection(result, response);
       if (result === 'duplicate') throw new ConflictException();
       clearIdentitySessionCookie(response);
@@ -207,7 +209,7 @@ export class IdentityAuthController {
   )
   @ApiServiceUnavailableResponse(
     problemResponse(
-      'Password-work capacity is temporarily unavailable',
+      'Password-work or durable throttle capacity is temporarily unavailable',
       undefined,
       'Advisory retry time.',
     ),
@@ -229,6 +231,7 @@ export class IdentityAuthController {
       if (result === 'invalid_credentials') {
         throw new PublicProblemException(HttpStatus.UNAUTHORIZED, 'credentials_invalid');
       }
+      if (isThrottleAdmissionRejection(result)) throwThrottleAdmissionRejection(result, response);
       if ('kind' in result) throwPasswordWorkRejection(result, response);
       setIdentitySessionCookie(response, result.sessionToken);
       return new LoginResponseDto();
@@ -268,6 +271,24 @@ function throwPasswordWorkRejection(result: PasswordWorkRejection, response: Res
   throw new PublicProblemException(HttpStatus.SERVICE_UNAVAILABLE, 'password_work_unavailable');
 }
 
+function isThrottleAdmissionRejection(result: unknown): result is ThrottleAdmissionRejection {
+  return (
+    typeof result === 'object' &&
+    result !== null &&
+    'kind' in result &&
+    ((result as { readonly kind: unknown }).kind === 'throttle_busy' ||
+      (result as { readonly kind: unknown }).kind === 'throttle_capacity_unavailable')
+  );
+}
+
+function throwThrottleAdmissionRejection(
+  result: ThrottleAdmissionRejection,
+  response: Response,
+): never {
+  response.setHeader('Retry-After', String(result.retryAfterSeconds));
+  throw new PublicProblemException(HttpStatus.SERVICE_UNAVAILABLE, result.kind);
+}
+
 function isCsrfBootstrapRejection(
   result: InitialPreAuthCheck | CsrfBootstrapRejection,
 ): result is CsrfBootstrapRejection {
@@ -303,7 +324,6 @@ function problemResponse(
 ): ApiResponseNoStatusOptions {
   const response: ApiResponseNoStatusOptions = {
     description,
-    schema: { type: 'object' },
     content: {
       'application/problem+json': { schema: { $ref: getSchemaPath(ProblemDetailsDto) } },
     },

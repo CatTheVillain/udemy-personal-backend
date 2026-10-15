@@ -3,6 +3,7 @@ import { createServer } from 'node:net';
 
 import { INestApplication } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import { Test } from '@nestjs/testing';
 import request, { Response } from 'supertest';
 import { DataSource } from 'typeorm';
 
@@ -12,7 +13,9 @@ import { ScryptPasswordHasher } from '../../../src/modules/identity/application/
 import { PasswordWorkLimiter } from '../../../src/modules/identity/application/password-work-limiter';
 import { createThrottleKey } from '../../../src/modules/identity/application/throttle-key';
 import { RegistrationThrottleEntity } from '../../../src/modules/identity/infrastructure/persistence/entities/registration-throttle.entity';
+import { LoginThrottleEntity } from '../../../src/modules/identity/infrastructure/persistence/entities/login-throttle.entity';
 import { SessionEntity } from '../../../src/modules/identity/infrastructure/persistence/entities/session.entity';
+import { UserEntity } from '../../../src/modules/identity/infrastructure/persistence/entities/user.entity';
 import { TypeOrmUserRepository } from '../../../src/modules/identity/infrastructure/persistence/repositories/typeorm-user.repository';
 import { createIdentityDataSource } from '../../../src/shared/database/identity-database-options';
 import { configureApplication } from '../../../src/main';
@@ -151,6 +154,18 @@ describe('Identity password-work HTTP admission', () => {
     const failing = await bootstrapCsrf(app);
     const enteredPersistence = deferred<void>();
     const rejectPersistence = deferred<void>();
+    const enteredDummyVerification = deferred<void>();
+    const verifyDummy = ScryptPasswordHasher.prototype.verifyDummy;
+    const hashSpy = jest.spyOn(ScryptPasswordHasher.prototype, 'hash');
+    const dummySpy = jest
+      .spyOn(ScryptPasswordHasher.prototype, 'verifyDummy')
+      .mockImplementation(async function (
+        this: ScryptPasswordHasher,
+        password: string,
+      ): Promise<void> {
+        enteredDummyVerification.resolve();
+        await verifyDummy.call(this, password);
+      });
     const insertSpy = jest
       .spyOn(TypeOrmUserRepository.prototype, 'insertIfAbsent')
       .mockImplementationOnce(async (): Promise<boolean> => {
@@ -163,7 +178,36 @@ describe('Identity password-work HTTP admission', () => {
       await enteredPersistence.promise;
 
       const parallel = await bootstrapCsrf(app);
-      expect((await register(app, parallel, 'parallel-after-kdf@example.test')).status).toBe(201);
+      const parallelEmail = 'parallel-after-kdf@example.test';
+      const parallelResponse = await register(app, parallel, parallelEmail);
+      expect(parallelResponse.status).toBe(503);
+      expect(parallelResponse.body.code).toBe('throttle_busy');
+      expect(parallelResponse.headers['retry-after']).toBe('1');
+      expect(parallelResponse.headers['access-control-expose-headers']).toContain('Retry-After');
+      expect(
+        await observer.getRepository(SessionEntity).findOneByOrFail({
+          tokenHash: sessionHash(parallel.cookie),
+        }),
+      ).toMatchObject({ state: 'pre_auth', revokedAt: null });
+      const parallelKey = createThrottleKey(
+        IdentityAuthConfig.from(process.env),
+        'registration',
+        parallelEmail,
+        '127.0.0.1',
+      );
+      if (parallelKey === null) throw new Error('Expected loopback throttle key.');
+      expect(
+        await observer
+          .getRepository(RegistrationThrottleEntity)
+          .findOneBy({ keyHash: parallelKey }),
+      ).toBeNull();
+      expect(hashSpy).toHaveBeenCalledTimes(1);
+
+      const heldPeriodLogin = await bootstrapCsrf(app);
+      const heldPeriodLoginRequest = login(app, heldPeriodLogin, 'held-period@example.test');
+      await enteredDummyVerification.promise;
+      expect((await heldPeriodLoginRequest).status).toBe(401);
+      expect(dummySpy).toHaveBeenCalledTimes(1);
 
       rejectPersistence.resolve();
       expect((await failedRequest).status).toBe(500);
@@ -191,9 +235,13 @@ describe('Identity password-work HTTP admission', () => {
       const response = await login(app, limited, 'after-error-limited@example.test');
       expect(response.status).toBe(429);
       expect(response.body.code).toBe('password_work_rate_limited');
+      expect(hashSpy).toHaveBeenCalledTimes(1);
+      expect(dummySpy).toHaveBeenCalledTimes(9);
     } finally {
       rejectPersistence.resolve();
       insertSpy.mockRestore();
+      dummySpy.mockRestore();
+      hashSpy.mockRestore();
     }
   });
 
@@ -260,10 +308,122 @@ describe('Identity password-work HTTP admission', () => {
       admissionSpy.mockRestore();
     }
   });
+
+  it('maps a real scoped scrypt registration callback failure safely and rolls it back', async () => {
+    const marker = 'SCF-registration-callback-marker';
+    await app.close();
+    let scoped: ScopedScryptFailureApplication | undefined;
+    try {
+      scoped = await createScopedScryptFailureApplication(marker);
+      app = scoped.app;
+      bootstrapApp = app;
+      bootstrapAdmissions = 0;
+      const bootstrap = await bootstrapCsrf(app);
+      const email = 'scf-registration@example.test';
+      const throttleKey = requiredThrottleKey('registration', email);
+      const authenticatedBefore = await observer
+        .getRepository(SessionEntity)
+        .countBy({ state: 'authenticated' });
+      const failed = await register(app, bootstrap, email);
+      expectSafeInternalError(failed, marker);
+      expect(scoped.calls()).toBe(1);
+      expect(
+        await observer.getRepository(UserEntity).findOneBy({ normalizedEmail: email }),
+      ).toBeNull();
+      expect(
+        await observer
+          .getRepository(RegistrationThrottleEntity)
+          .findOneBy({ keyHash: throttleKey }),
+      ).toBeNull();
+      await expectPreAuth(observer, bootstrap);
+      expect(await observer.getRepository(SessionEntity).countBy({ state: 'authenticated' })).toBe(
+        authenticatedBefore,
+      );
+
+      expect((await register(app, bootstrap, email)).status).toBe(201);
+      expect(scoped.calls()).toBe(2);
+    } finally {
+      scoped?.restore();
+    }
+  });
+
+  it('maps a real scoped scrypt known-user callback failure safely and releases password work', async () => {
+    const email = 'scf-known-user@example.test';
+    const setup = await bootstrapCsrf(app);
+    expect((await register(app, setup, email)).status).toBe(201);
+    await app.close();
+    const marker = 'SCF-known-user-callback-marker';
+    let scoped: ScopedScryptFailureApplication | undefined;
+    try {
+      scoped = await createScopedScryptFailureApplication(marker);
+      app = scoped.app;
+      bootstrapApp = app;
+      bootstrapAdmissions = 0;
+      const bootstrap = await bootstrapCsrf(app);
+      const throttleKey = requiredThrottleKey('login', email);
+      const authenticatedBefore = await observer
+        .getRepository(SessionEntity)
+        .countBy({ state: 'authenticated' });
+      const failed = await login(app, bootstrap, email);
+      expectSafeInternalError(failed, marker);
+      expect(scoped.calls()).toBe(1);
+      expect(
+        await observer.getRepository(LoginThrottleEntity).findOneBy({ keyHash: throttleKey }),
+      ).toBeNull();
+      await expectPreAuth(observer, bootstrap);
+      expect(await observer.getRepository(SessionEntity).countBy({ state: 'authenticated' })).toBe(
+        authenticatedBefore,
+      );
+
+      expect((await login(app, bootstrap, email)).status).toBe(200);
+      expect(scoped.calls()).toBe(2);
+    } finally {
+      scoped?.restore();
+    }
+  });
+
+  it('maps a real scoped scrypt unknown-user callback failure safely and retries as credentials invalid', async () => {
+    const marker = 'SCF-unknown-user-callback-marker';
+    await app.close();
+    let scoped: ScopedScryptFailureApplication | undefined;
+    try {
+      scoped = await createScopedScryptFailureApplication(marker);
+      app = scoped.app;
+      bootstrapApp = app;
+      bootstrapAdmissions = 0;
+      const bootstrap = await bootstrapCsrf(app);
+      const email = 'scf-unknown-user@example.test';
+      const throttleKey = requiredThrottleKey('login', email);
+      const authenticatedBefore = await observer
+        .getRepository(SessionEntity)
+        .countBy({ state: 'authenticated' });
+      const failed = await login(app, bootstrap, email);
+      expectSafeInternalError(failed, marker);
+      expect(scoped.calls()).toBe(1);
+      expect(
+        await observer.getRepository(UserEntity).findOneBy({ normalizedEmail: email }),
+      ).toBeNull();
+      expect(
+        await observer.getRepository(LoginThrottleEntity).findOneBy({ keyHash: throttleKey }),
+      ).toBeNull();
+      await expectPreAuth(observer, bootstrap);
+      expect(await observer.getRepository(SessionEntity).countBy({ state: 'authenticated' })).toBe(
+        authenticatedBefore,
+      );
+
+      const retry = await login(app, bootstrap, email);
+      expect(retry.status).toBe(401);
+      expect(retry.body.code).toBe('credentials_invalid');
+      expect(scoped.calls()).toBe(2);
+    } finally {
+      scoped?.restore();
+    }
+  });
 });
 
 type Bootstrap = { readonly cookie: string; readonly csrfToken: string };
 type Deferred<Value> = { readonly promise: Promise<Value>; resolve(value: Value): void };
+type ScopedThrottlePurpose = 'login' | 'registration';
 
 function deferred<Value>(): Deferred<Value> {
   let resolvePromise: ((value: Value) => void) | undefined;
@@ -321,6 +481,86 @@ function sessionHash(cookie: string): string {
   const value = cookie.slice('__Host-session='.length);
   if (value.length === 0) throw new Error('Missing session value.');
   return createHash('sha256').update(value, 'utf8').digest('hex');
+}
+
+type ScryptArguments = Parameters<typeof import('node:crypto').scrypt>;
+
+interface ScopedScryptFailureApplication {
+  readonly app: INestApplication;
+  calls(): number;
+  restore(): void;
+}
+
+async function createScopedScryptFailureApplication(
+  marker: string,
+): Promise<ScopedScryptFailureApplication> {
+  let calls = 0;
+  let IsolatedHasher: typeof ScryptPasswordHasher | undefined;
+  let scopedApp: INestApplication | undefined;
+  jest.resetModules();
+  jest.doMock('node:crypto', () => {
+    const actual = jest.requireActual<typeof import('node:crypto')>('node:crypto');
+    function controlledScrypt(...arguments_: ScryptArguments): void {
+      calls += 1;
+      if (calls > 1) {
+        actual.scrypt(...arguments_);
+        return;
+      }
+      const callback = arguments_.at(-1);
+      if (typeof callback !== 'function') throw new Error('Expected scrypt callback.');
+      queueMicrotask(() => callback(new Error(marker), Buffer.alloc(64)));
+    }
+    return { ...actual, scrypt: controlledScrypt };
+  });
+  try {
+    await jest.isolateModulesAsync(async () => {
+      const isolated = await import('../../../src/modules/identity/application/password-hasher');
+      IsolatedHasher = isolated.ScryptPasswordHasher;
+    });
+    if (IsolatedHasher === undefined) throw new Error('Isolated hasher was unavailable.');
+    const module = await Test.createTestingModule({ imports: [AppModule] })
+      .overrideProvider(ScryptPasswordHasher)
+      .useValue(new IsolatedHasher())
+      .compile();
+    scopedApp = module.createNestApplication();
+    configureApplication(scopedApp);
+    await scopedApp.init();
+    return {
+      app: scopedApp,
+      calls: (): number => calls,
+      restore: (): void => {
+        jest.dontMock('node:crypto');
+        jest.resetModules();
+      },
+    };
+  } catch (error: unknown) {
+    if (scopedApp !== undefined) await scopedApp.close();
+    jest.dontMock('node:crypto');
+    jest.resetModules();
+    throw error;
+  }
+}
+
+function expectSafeInternalError(response: Response, marker: string): void {
+  expect(response.status).toBe(500);
+  expect(response.headers['content-type']).toContain('application/problem+json');
+  expect(response.body.code).toBe('INTERNAL_ERROR');
+  expect(response.body.detail).toBe('An unexpected error occurred.');
+  expect(JSON.stringify(response.body)).not.toContain(marker);
+}
+
+function requiredThrottleKey(purpose: ScopedThrottlePurpose, email: string): string {
+  const key = createThrottleKey(IdentityAuthConfig.from(process.env), purpose, email, '127.0.0.1');
+  if (key === null) throw new Error('Expected loopback throttle key.');
+  return key;
+}
+
+async function expectPreAuth(observer: DataSource, bootstrap: Bootstrap): Promise<void> {
+  expect(
+    await observer
+      .getRepository(SessionEntity)
+      .findOneByOrFail({ tokenHash: sessionHash(bootstrap.cookie) }),
+  ).toMatchObject({ state: 'pre_auth', revokedAt: null });
 }
 
 function applyEnvironment(plan: IsolatedPostgresPlan): void {
