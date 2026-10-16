@@ -124,7 +124,7 @@ describe('Identity guarded session transition', () => {
           await installStatementBarrier(runners.coordinator, plan.schemaName);
           await runners.coordinator.query('SELECT pg_advisory_lock($1)', [BARRIER_LOCK_KEY]);
           lockHeld = true;
-          const now = new Date();
+          const now = new Date('2000-01-01T00:00:00.000Z');
           const operationA = new TypeOrmSessionRepository(
             runners.sourceA.manager,
           ).revokeActiveSession({ id: session.id, tokenHash: session.tokenHash, now });
@@ -145,8 +145,14 @@ describe('Identity guarded session transition', () => {
             plan.databaseName,
             plan.schemaName,
           );
+          const lowerBound = readTimestampText(
+            await runners.coordinator.query('SELECT clock_timestamp()::text AS value'),
+          );
           const results = await unlockAndSettle(runners.coordinator, [operationA, operationB]);
           lockHeld = false;
+          const upperBound = readTimestampText(
+            await runners.coordinator.query('SELECT clock_timestamp()::text AS value'),
+          );
           expect(results.map((result) => result.affectedRows).sort()).toEqual([0, 1]);
           const stored = await sources.sourceC
             .getRepository(SessionEntity)
@@ -162,7 +168,17 @@ describe('Identity guarded session transition', () => {
             absoluteExpiresAt: session.absoluteExpiresAt,
             idleExpiresAt: session.idleExpiresAt,
           });
-          expect(stored.revokedAt).toEqual(now);
+          const clockAssertions = readSingleRecord(
+            await sources.sourceC.query(
+              `SELECT revoked_at > $1::timestamptz AS after_lower, revoked_at <= $2::timestamptz AS before_or_at_upper, revoked_at <> $3::timestamptz AS differs_from_caller FROM "${plan.schemaName}".identity_sessions WHERE id = $4`,
+              [lowerBound, upperBound, now.toISOString(), session.id],
+            ),
+          );
+          expect(clockAssertions).toMatchObject({
+            after_lower: true,
+            before_or_at_upper: true,
+            differs_from_caller: true,
+          });
         } finally {
           if (lockHeld) {
             await unlockAndSettle(runners.coordinator, operations);
@@ -475,6 +491,11 @@ function readInteger(rows: unknown, field: string): number {
   const row = readSingleRecord(rows);
   const value = row[field];
   if (typeof value !== 'number') throw new Error(`Expected numeric ${field} from PostgreSQL.`);
+  return value;
+}
+function readTimestampText(rows: unknown): string {
+  const value = readSingleRecord(rows).value;
+  if (typeof value !== 'string') throw new Error('Expected PostgreSQL timestamp text.');
   return value;
 }
 function readContentionRows(rows: unknown): readonly ContentionRow[] {

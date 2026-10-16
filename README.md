@@ -18,6 +18,10 @@ DATABASE_NAME
 DATABASE_SCHEMA
 ```
 
+Identity authentication also requires `IDENTITY_THROTTLE_HMAC_SECRET`: a base64url-encoded secret
+of at least 32 bytes. Supply it through the runtime environment; do not place a secret value in
+source control or this example configuration.
+
 `DATABASE_SCHEMA` must be a lowercase PostgreSQL identifier. TypeORM schema synchronization is
 disabled. Create the selected database and schema before applying forward-only migrations:
 
@@ -30,6 +34,11 @@ Minimal NestJS backend baseline for the Udemy Personal project.
 ## API
 
 The health-style Hello endpoint is available at `GET /api/v1/hello` and returns the current service greeting.
+
+The initial identity boundary provides `GET /api/v1/auth/csrf`, `POST /api/v1/auth/register`, and
+`POST /api/v1/auth/login`. Registration creates an ordinary account and does not authenticate it.
+Both POST endpoints require an allowed `Origin`, the `__Host-session` pre-auth cookie, and an
+`X-CSRF-Token` header returned only by the successful CSRF bootstrap response.
 
 ## Prerequisites
 

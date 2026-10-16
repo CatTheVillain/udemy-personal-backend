@@ -41,6 +41,7 @@ export function configureApplication(
   app.setGlobalPrefix(API_PREFIX);
   const corsOptions: CorsOptions = {
     credentials: true,
+    exposedHeaders: ['Retry-After'],
     origin: (origin, callback) => {
       callback(null, origin === undefined || config.corsAllowedOrigins.includes(origin));
     },
@@ -61,7 +62,11 @@ export function configureApplication(
 
   const document = SwaggerModule.createDocument(
     app,
-    new DocumentBuilder().setTitle('Udemy Personal Backend').setVersion('1.0').build(),
+    new DocumentBuilder()
+      .setTitle('Udemy Personal Backend')
+      .setVersion('1.0')
+      .addCookieAuth('__Host-session', undefined, 'preAuthSession')
+      .build(),
   );
   SwaggerModule.setup(`${API_PREFIX}/docs`, app, document);
 }
