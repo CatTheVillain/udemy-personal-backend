@@ -52,6 +52,17 @@ export class TypeOrmSessionRepository implements SessionRepositoryPort {
   public async rotateActivePreAuthCsrf(
     input: RotatePreAuthCsrfInput,
   ): Promise<SessionTransitionResult> {
+    const table = this.entityManager.getRepository(SessionEntity).metadata.tablePath;
+    const rows = await this.entityManager.query<readonly unknown[]>(
+      `SELECT 1 FROM ${table}
+       WHERE id = $1
+         AND token_hash = $2
+         AND state = 'pre_auth'
+         AND revoked_at IS NULL
+       FOR UPDATE`,
+      [input.id, input.tokenHash],
+    );
+    if (rows.length === 0) return { affectedRows: 0 };
     const result = await this.entityManager
       .createQueryBuilder()
       .update(SessionEntity)
@@ -60,8 +71,8 @@ export class TypeOrmSessionRepository implements SessionRepositoryPort {
       .andWhere('token_hash = :tokenHash', { tokenHash: input.tokenHash })
       .andWhere("state = 'pre_auth'")
       .andWhere('revoked_at IS NULL')
-      .andWhere('absolute_expires_at > :now', { now: input.now })
-      .andWhere('idle_expires_at > :now', { now: input.now })
+      .andWhere('absolute_expires_at > clock_timestamp()')
+      .andWhere('idle_expires_at > clock_timestamp()')
       .execute();
     return toSessionTransitionResult(result.affected);
   }

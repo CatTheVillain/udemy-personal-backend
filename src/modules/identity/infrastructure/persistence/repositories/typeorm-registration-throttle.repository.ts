@@ -73,7 +73,9 @@ export class TypeOrmRegistrationThrottleRepository implements RegistrationThrott
       await repository.save(entity);
       return { kind: 'admitted' };
     }
-    if (entity.attemptCount >= 3) return { kind: 'rate_limited' };
+    if (entity.attemptCount >= 3) {
+      return { kind: 'durable_rate_limited', expiresAt: entity.expiresAt };
+    }
 
     entity.attemptCount += 1;
     await repository.save(entity);

@@ -87,7 +87,9 @@ export class TypeOrmLoginThrottleRepository implements LoginThrottleRepositoryPo
     if (entity === null || entity.expiresAt <= now) {
       throw new Error('Login throttle must be acquired before a failure is consumed.');
     }
-    if (entity.failureCount >= LOGIN_FAILURE_LIMIT) return { kind: 'rate_limited' };
+    if (entity.failureCount >= LOGIN_FAILURE_LIMIT) {
+      return { kind: 'durable_rate_limited', expiresAt: entity.expiresAt };
+    }
     if (entity.failureCount === 0) {
       entity.windowStartedAt = now;
       entity.expiresAt = new Date(now.getTime() + 15 * 60 * 1000);

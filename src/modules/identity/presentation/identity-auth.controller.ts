@@ -42,7 +42,7 @@ import {
   PreAuthContext,
 } from '../application/identity-authentication.service';
 import { PasswordWorkRejection } from '../application/password-work-limiter';
-import { ThrottleAdmissionRejection } from '../domain/identity.types';
+import { DurableThrottleRejection, ThrottleAdmissionRejection } from '../domain/identity.types';
 import { ProblemDetailsDto } from '../../../shared/http/problem-details';
 import { PublicProblemException } from '../../../shared/http/public-problem.exception';
 import { AuthEmailPasswordRequestDto } from './dto/auth-email-password.request.dto';
@@ -61,6 +61,8 @@ import {
 } from './identity-session-cookie';
 import { IdentityAuthTransportMapper } from './identity-auth.transport-mapper';
 import { IdentityHttpRequest, PreAuthCsrfGuard } from './pre-auth-csrf.guard';
+
+type DurableThrottleProblemCode = 'registration_rate_limited' | 'login_rate_limited';
 
 @ApiTags('identity')
 @ApiExtraModels(
@@ -172,9 +174,8 @@ export class IdentityAuthController {
         preAuth,
         IdentityAuthTransportMapper.toCommand(body, request),
       );
-      if (result === 'rate_limited') {
-        throw new PublicProblemException(HttpStatus.TOO_MANY_REQUESTS, 'registration_rate_limited');
-      }
+      if (isDurableThrottleRejection(result))
+        throwDurableThrottleRejection(result, response, 'registration_rate_limited');
       if (isThrottleAdmissionRejection(result)) throwThrottleAdmissionRejection(result, response);
       if (typeof result !== 'string') throwPasswordWorkRejection(result, response);
       if (result === 'duplicate') throw new ConflictException();
@@ -225,9 +226,8 @@ export class IdentityAuthController {
         preAuth,
         IdentityAuthTransportMapper.toCommand(body, request),
       );
-      if (result === 'rate_limited') {
-        throw new PublicProblemException(HttpStatus.TOO_MANY_REQUESTS, 'login_rate_limited');
-      }
+      if (isDurableThrottleRejection(result))
+        throwDurableThrottleRejection(result, response, 'login_rate_limited');
       if (result === 'invalid_credentials') {
         throw new PublicProblemException(HttpStatus.UNAUTHORIZED, 'credentials_invalid');
       }
@@ -269,6 +269,24 @@ function throwPasswordWorkRejection(result: PasswordWorkRejection, response: Res
     throw new PublicProblemException(HttpStatus.SERVICE_UNAVAILABLE, 'password_work_busy');
   }
   throw new PublicProblemException(HttpStatus.SERVICE_UNAVAILABLE, 'password_work_unavailable');
+}
+
+function isDurableThrottleRejection(result: unknown): result is DurableThrottleRejection {
+  return (
+    typeof result === 'object' &&
+    result !== null &&
+    'kind' in result &&
+    (result as { readonly kind: unknown }).kind === 'durable_rate_limited'
+  );
+}
+
+function throwDurableThrottleRejection(
+  result: DurableThrottleRejection,
+  response: Response,
+  code: DurableThrottleProblemCode,
+): never {
+  response.setHeader('Retry-After', String(result.retryAfterSeconds));
+  throw new PublicProblemException(HttpStatus.TOO_MANY_REQUESTS, code);
 }
 
 function isThrottleAdmissionRejection(result: unknown): result is ThrottleAdmissionRejection {

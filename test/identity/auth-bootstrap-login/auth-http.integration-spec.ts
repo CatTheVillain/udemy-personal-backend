@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { createServer } from 'node:net';
 
 import { INestApplication } from '@nestjs/common';
@@ -9,6 +9,10 @@ import { DataSource } from 'typeorm';
 
 import { AppModule } from '../../../src/app.module';
 import { IdentityAuthConfig } from '../../../src/modules/identity/application/identity-auth.config';
+import {
+  IDENTITY_CLOCK,
+  IdentityClock,
+} from '../../../src/modules/identity/application/identity-clock';
 import { ScryptPasswordHasher } from '../../../src/modules/identity/application/password-hasher';
 import { createThrottleKey } from '../../../src/modules/identity/application/throttle-key';
 import { LoginThrottleEntity } from '../../../src/modules/identity/infrastructure/persistence/entities/login-throttle.entity';
@@ -325,6 +329,84 @@ describe('Identity HTTP registration and login', () => {
       }),
     ).toMatchObject({ state: 'pre_auth', revokedAt: null });
   });
+
+  it.each([
+    { purpose: 'registration' as const, count: 3, retryAfterSeconds: 2 },
+    { purpose: 'login' as const, count: 5, retryAfterSeconds: 1 },
+  ])(
+    'returns the durable $purpose retry window without confusing password-work rejection',
+    async ({ purpose, count, retryAfterSeconds }) => {
+      const now = new Date('2031-01-01T00:00:00.000Z');
+      const clock = app.get<IdentityClock>(IDENTITY_CLOCK);
+      const clockSpy = jest.spyOn(clock, 'now').mockReturnValue(now);
+      const email = `durable-retry-${purpose}-${randomBytes(6).toString('hex')}@example.test`;
+      const key = createThrottleKey(
+        IdentityAuthConfig.from(process.env),
+        purpose,
+        email,
+        '127.0.0.1',
+      );
+      if (key === null) throw new Error('Expected loopback durable throttle key.');
+      const expiresAt = new Date(now.getTime() + (retryAfterSeconds === 1 ? 1 : 1001));
+      const repository =
+        purpose === 'registration'
+          ? observer.getRepository(RegistrationThrottleEntity)
+          : observer.getRepository(LoginThrottleEntity);
+      try {
+        await repository.insert(
+          purpose === 'registration'
+            ? {
+                id: randomUUID(),
+                keyHash: key,
+                windowStartedAt: now,
+                expiresAt,
+                attemptCount: count,
+              }
+            : {
+                id: randomUUID(),
+                keyHash: key,
+                windowStartedAt: now,
+                expiresAt,
+                failureCount: count,
+              },
+        );
+        const bootstrap = await bootstrapCsrf(app);
+        const limited = await request(app.getHttpServer())
+          .post(`/api/v1/auth/${purpose === 'registration' ? 'register' : 'login'}`)
+          .set('Origin', ORIGIN)
+          .set('Cookie', bootstrap.cookie)
+          .set('X-CSRF-Token', bootstrap.csrfToken)
+          .send({ email, password: 'wrong literal password' });
+
+        expect(limited.status).toBe(429);
+        expect(limited.body.code).toBe(
+          purpose === 'registration' ? 'registration_rate_limited' : 'login_rate_limited',
+        );
+        expect(limited.body.code).not.toBe('password_work_rate_limited');
+
+        await repository.update(
+          { keyHash: key },
+          {
+            windowStartedAt: new Date(now.getTime() - 15 * 60 * 1000 - 1),
+            expiresAt: new Date(now.getTime() - 1),
+          },
+        );
+        const expiredWindowBootstrap = await bootstrapCsrf(app);
+        const admitted = await request(app.getHttpServer())
+          .post(`/api/v1/auth/${purpose === 'registration' ? 'register' : 'login'}`)
+          .set('Origin', ORIGIN)
+          .set('Cookie', expiredWindowBootstrap.cookie)
+          .set('X-CSRF-Token', expiredWindowBootstrap.csrfToken)
+          .send({ email, password: 'wrong literal password' });
+        expect(admitted.status).toBe(purpose === 'registration' ? 201 : 401);
+        if (purpose === 'login') expect(admitted.body.code).toBe('credentials_invalid');
+        expect(limited.headers['retry-after']).toBe(String(retryAfterSeconds));
+      } finally {
+        clockSpy.mockRestore();
+        await repository.delete({ keyHash: key });
+      }
+    },
+  );
 
   it('publishes every auth Problem Details response with its exact media type, description, and headers', () => {
     const document: OpenAPIObject = SwaggerModule.createDocument(

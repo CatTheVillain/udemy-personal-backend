@@ -24,7 +24,12 @@ import {
   createThrottleKey,
   ThrottlePurpose,
 } from './throttle-key';
-import { LOGIN_FAILURE_LIMIT, Session, ThrottleAdmissionRejection } from '../domain/identity.types';
+import {
+  DurableThrottleRejection,
+  LOGIN_FAILURE_LIMIT,
+  Session,
+  ThrottleAdmissionRejection,
+} from '../domain/identity.types';
 
 const PRE_AUTH_LIFETIME_MS = 10 * 60 * 1000;
 const AUTH_IDLE_LIFETIME_MS = 8 * 60 * 60 * 1000;
@@ -62,9 +67,16 @@ export interface AuthenticatedSessionResult {
 }
 
 export type RegistrationResult =
-  'registered' | 'duplicate' | 'rate_limited' | PasswordWorkRejection | ThrottleAdmissionRejection;
+  | 'registered'
+  | 'duplicate'
+  | DurableThrottleRejection
+  | PasswordWorkRejection
+  | ThrottleAdmissionRejection;
 export type LoginResult =
-  'invalid_credentials' | 'rate_limited' | PasswordWorkRejection | ThrottleAdmissionRejection;
+  | 'invalid_credentials'
+  | DurableThrottleRejection
+  | PasswordWorkRejection
+  | ThrottleAdmissionRejection;
 export type InitialPreAuthCheck =
   | { readonly kind: 'accepted'; readonly context: PreAuthContext }
   | { readonly kind: 'clear_and_unauthorized' }
@@ -161,7 +173,9 @@ export class IdentityAuthenticationService {
           expiresAt: plusMilliseconds(now, THROTTLE_WINDOW_MS),
         });
         if (admitted.kind !== 'admitted') {
-          return admitted.kind === 'rate_limited' ? 'rate_limited' : admitted;
+          return admitted.kind === 'durable_rate_limited'
+            ? toDurableThrottleRejection(admitted.expiresAt, now)
+            : admitted;
         }
 
         const passwordWork = this.passwordWorkLimiter.tryStart(passwordWorkSourceKey);
@@ -204,7 +218,9 @@ export class IdentityAuthenticationService {
           expiresAt: plusMilliseconds(now, THROTTLE_WINDOW_MS),
         });
         if ('kind' in throttle) return throttle;
-        if (throttle.failureCount >= LOGIN_FAILURE_LIMIT) return 'rate_limited';
+        if (throttle.failureCount >= LOGIN_FAILURE_LIMIT) {
+          return toDurableThrottleRejection(throttle.expiresAt, now);
+        }
         const user = await scope.users.findByNormalizedEmail(canonicalEmail);
         const passwordWork = this.passwordWorkLimiter.tryStart(passwordWorkSourceKey);
         if (passwordWork.kind !== 'started') return passwordWork;
@@ -219,7 +235,9 @@ export class IdentityAuthenticationService {
         }
         if (!verified || user === null) {
           const failure = await scope.loginThrottles.consumeFailure(throttleKey, now);
-          if (failure.kind === 'rate_limited') return 'rate_limited';
+          if (failure.kind === 'durable_rate_limited') {
+            return toDurableThrottleRejection(failure.expiresAt, now);
+          }
           if (failure.kind !== 'admitted') return failure;
           await verifyCurrentPreAuth(scope, preAuth);
           return 'invalid_credentials';
@@ -366,4 +384,11 @@ function createAuthenticatedSession(userId: string, sessionToken: string, now: D
 
 function plusMilliseconds(value: Date, milliseconds: number): Date {
   return new Date(value.getTime() + milliseconds);
+}
+
+function toDurableThrottleRejection(expiresAt: Date, now: Date): DurableThrottleRejection {
+  return {
+    kind: 'durable_rate_limited',
+    retryAfterSeconds: Math.max(1, Math.ceil((expiresAt.getTime() - now.getTime()) / 1000)),
+  };
 }

@@ -880,6 +880,65 @@ describe('Identity stale-CSRF transaction recheck', () => {
     },
   );
 
+  it('CSRF rotation rejects a session that expires while its unchanged PostgreSQL row lock is held', async () => {
+    const validBootstrap = await bootstrapCsrf(app);
+    const validBefore = await observer.getRepository(SessionEntity).findOneByOrFail({
+      tokenHash: sha256(validBootstrap.cookieValue),
+    });
+    const validRotation = await request(app.getHttpServer())
+      .get('/api/v1/auth/csrf')
+      .set('Cookie', validBootstrap.cookie)
+      .expect(200);
+    expect(validRotation.body.data.csrfToken).toEqual(expect.any(String));
+    expect(
+      (await observer.getRepository(SessionEntity).findOneByOrFail({ id: validBefore.id }))
+        .csrfTokenHash,
+    ).not.toBe(validBefore.csrfTokenHash);
+
+    const bootstrap = await bootstrapCsrf(app);
+    const session = await observer.getRepository(SessionEntity).findOneByOrFail({
+      tokenHash: sha256(bootstrap.cookieValue),
+    });
+    await observer.query(
+      `UPDATE "${plan.schemaName}".identity_sessions SET idle_expires_at = clock_timestamp() + INTERVAL '2 seconds', absolute_expires_at = clock_timestamp() + INTERVAL '3 seconds' WHERE id = $1`,
+      [session.id],
+    );
+    const before = await observer.getRepository(SessionEntity).findOneByOrFail({ id: session.id });
+    const holder = observer.createQueryRunner();
+    await holder.connect();
+    await holder.startTransaction();
+    try {
+      const holderPid = readBackendPid(await holder.query('SELECT pg_backend_pid()::int AS pid'));
+      await holder.query(
+        `SELECT id FROM "${plan.schemaName}".identity_sessions WHERE id = $1 FOR UPDATE`,
+        [session.id],
+      );
+      const pending = request(app.getHttpServer())
+        .get('/api/v1/auth/csrf')
+        .set('Cookie', bootstrap.cookie)
+        .then((response) => response);
+      const waiters = await waitForWaitingTransactions(observer, plan, 'identity_sessions', 1);
+      expect(waiters).toHaveLength(1);
+      expect(waiters[0]?.pid).not.toBe(holderPid);
+      expect(waiters[0]?.query).toContain('identity_sessions');
+      await waitForSessionExpiry(observer, plan, session.id);
+      await holder.commitTransaction();
+
+      const response = await pending;
+      expect(response.status).toBe(401);
+      expect(response.body.code).toBe('AUTHENTICATION_REQUIRED');
+      expect(readRawSetCookie(response)).toContain('__Host-session=;');
+      expect(response.body.data).toBeUndefined();
+      expect(
+        (await observer.getRepository(SessionEntity).findOneByOrFail({ id: session.id }))
+          .csrfTokenHash,
+      ).toBe(before.csrfTokenHash);
+    } finally {
+      if (holder.isTransactionActive) await holder.rollbackTransaction();
+      await holder.release();
+    }
+  });
+
   it('serializes six simultaneous invalid logins to five credentials errors and one limit', async () => {
     await registerAccount(app, 'parallel@example.test');
     const seededInvalid = await bootstrapCsrf(app);
@@ -1619,6 +1678,18 @@ async function waitForWaitingTransactions(
 
 type WaitingQueryReceipt = { readonly pid: number; readonly query: string };
 type LocalThrottlePurpose = 'login' | 'registration';
+
+function readBackendPid(rows: unknown): number {
+  if (!Array.isArray(rows) || rows.length !== 1)
+    throw new Error('Expected PostgreSQL holder PID row.');
+  const [row] = rows;
+  if (typeof row !== 'object' || row === null || Array.isArray(row)) {
+    throw new Error('Expected PostgreSQL holder PID record.');
+  }
+  const pid = (row as Record<string, unknown>).pid;
+  if (typeof pid !== 'number') throw new Error('Expected numeric PostgreSQL holder PID.');
+  return pid;
+}
 
 function readWaitingQueryReceipts(value: unknown): readonly WaitingQueryReceipt[] {
   if (!Array.isArray(value)) throw new Error('Unexpected lock-observer result.');

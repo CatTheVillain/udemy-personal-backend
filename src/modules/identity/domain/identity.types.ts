@@ -85,7 +85,17 @@ export interface ThrottleWindowInput {
 }
 
 export type ThrottleAdmissionResult =
-  { readonly kind: 'admitted' } | { readonly kind: 'rate_limited' } | ThrottleAdmissionRejection;
+  { readonly kind: 'admitted' } | DurableThrottleWindowRejection | ThrottleAdmissionRejection;
+
+export interface DurableThrottleWindowRejection {
+  readonly kind: 'durable_rate_limited';
+  readonly expiresAt: Date;
+}
+
+export interface DurableThrottleRejection {
+  readonly kind: 'durable_rate_limited';
+  readonly retryAfterSeconds: number;
+}
 
 export type ThrottleAdmissionRejection =
   | { readonly kind: 'throttle_busy'; readonly retryAfterSeconds: 1 }
