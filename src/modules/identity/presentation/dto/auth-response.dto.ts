@@ -27,6 +27,19 @@ export class LoginResponseDto {
   }
 }
 
+export class AuthenticatedIdentityResponseDto {
+  @ApiProperty()
+  public readonly id: string;
+
+  @ApiProperty()
+  public readonly email: string;
+
+  public constructor(id: string, email: string) {
+    this.id = id;
+    this.email = email;
+  }
+}
+
 export class CsrfBootstrapApiResponseDto {
   @ApiProperty({ type: () => CsrfBootstrapResponseDto })
   public readonly data: CsrfBootstrapResponseDto;
@@ -50,6 +63,15 @@ export class LoginApiResponseDto {
   public readonly data: LoginResponseDto;
 
   public constructor(data: LoginResponseDto) {
+    this.data = data;
+  }
+}
+
+export class AuthenticatedIdentityApiResponseDto {
+  @ApiProperty({ type: () => AuthenticatedIdentityResponseDto })
+  public readonly data: AuthenticatedIdentityResponseDto;
+
+  public constructor(data: AuthenticatedIdentityResponseDto) {
     this.data = data;
   }
 }

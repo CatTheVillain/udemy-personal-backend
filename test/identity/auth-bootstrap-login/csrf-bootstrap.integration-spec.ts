@@ -136,23 +136,32 @@ describe('Pre-auth CSRF bootstrap', () => {
     }
   });
 
-  it('rejects an active authenticated session without rotating, clearing, or touching its exact row', async () => {
+  it('rotates an active authenticated session on the shared route and renews only its bounded idle state', async () => {
     const token = randomBytes(32).toString('base64url');
     const session = await insertAuthenticatedSession(observer, token);
     const response = await request(app.getHttpServer())
       .get('/api/v1/auth/csrf')
       .set('Cookie', `__Host-session=${token}`)
-      .expect(403);
+      .expect(200);
     const after = await observer.getRepository(SessionEntity).findOneByOrFail({ id: session.id });
 
-    expect(response.headers['set-cookie']).toBeUndefined();
+    const receipt = readBootstrap(response);
+    expect(readCookieToken(readRawSetCookie(response))).toBe(token);
+    expect(receipt.csrfToken).toMatch(/^[A-Za-z0-9_-]{43}$/);
     expect(after).toMatchObject({
+      id: session.id,
+      userId: session.userId,
       tokenHash: session.tokenHash,
-      csrfTokenHash: session.csrfTokenHash,
       state: 'authenticated',
-      lastSeenAt: session.lastSeenAt,
+      createdAt: session.createdAt,
+      absoluteExpiresAt: session.absoluteExpiresAt,
       revokedAt: null,
     });
+    expect(after.csrfTokenHash).toBe(sha256Hex(receipt.csrfToken));
+    expect(after.csrfTokenHash).not.toBe(session.csrfTokenHash);
+    expect(after.lastSeenAt.getTime()).toBeGreaterThanOrEqual(session.lastSeenAt.getTime());
+    expect(after.idleExpiresAt.getTime()).toBeLessThanOrEqual(after.absoluteExpiresAt.getTime());
+    expect(after.idleExpiresAt.getTime()).toBeGreaterThan(after.lastSeenAt.getTime());
   });
 
   it('removes only expired pre-auth and revoked pre-auth rows during an admitted no-cookie bootstrap', async () => {

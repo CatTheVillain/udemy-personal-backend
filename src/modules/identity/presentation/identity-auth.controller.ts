@@ -21,6 +21,7 @@ import {
   ApiHeader,
   ApiHeaderOptions,
   ApiOkResponse,
+  ApiNoContentResponse,
   ApiOperation,
   ApiResponseNoStatusOptions,
   ApiServiceUnavailableResponse,
@@ -34,10 +35,11 @@ import {
 import { Response } from 'express';
 
 import {
-  IdentityAuthenticationFailure,
-  IdentityAuthenticationService,
+  AuthenticatedSessionContext,
   CsrfBootstrapOutcome,
   CsrfBootstrapRejection,
+  IdentityAuthenticationFailure,
+  IdentityAuthenticationService,
   InitialPreAuthCheck,
   PreAuthContext,
 } from '../application/identity-authentication.service';
@@ -47,6 +49,8 @@ import { ProblemDetailsDto } from '../../../shared/http/problem-details';
 import { PublicProblemException } from '../../../shared/http/public-problem.exception';
 import { AuthEmailPasswordRequestDto } from './dto/auth-email-password.request.dto';
 import {
+  AuthenticatedIdentityApiResponseDto,
+  AuthenticatedIdentityResponseDto,
   CsrfBootstrapApiResponseDto,
   CsrfBootstrapResponseDto,
   LoginApiResponseDto,
@@ -54,6 +58,12 @@ import {
   RegistrationApiResponseDto,
   RegistrationResponseDto,
 } from './dto/auth-response.dto';
+import { SkipResponseEnvelope } from '../../../shared/http/skip-response-envelope.decorator';
+import {
+  AuthenticatedCsrfGuard,
+  AuthenticatedIdentityHttpRequest,
+} from './authenticated-csrf.guard';
+import { IdentityAuthResponseMapper } from './identity-auth.response-mapper';
 import {
   clearIdentitySessionCookie,
   readIdentitySessionCookie,
@@ -67,6 +77,7 @@ type DurableThrottleProblemCode = 'registration_rate_limited' | 'login_rate_limi
 @ApiTags('identity')
 @ApiExtraModels(
   CsrfBootstrapApiResponseDto,
+  AuthenticatedIdentityApiResponseDto,
   RegistrationApiResponseDto,
   LoginApiResponseDto,
   ProblemDetailsDto,
@@ -76,20 +87,20 @@ export class IdentityAuthController {
   public constructor(private readonly authentication: IdentityAuthenticationService) {}
 
   @Get('csrf')
-  @ApiOperation({ summary: 'Bootstrap or rotate a pre-auth CSRF token' })
-  @ApiHeader(optionalRequestHeader('Cookie', 'Optional __Host-session pre-auth cookie.'))
+  @ApiOperation({ summary: 'Bootstrap or rotate the CSRF token for the current session' })
+  @ApiHeader(optionalRequestHeader('Cookie', 'Optional __Host-session cookie.'))
   @ApiHeader(optionalRequestHeader('Origin', 'Optional configured browser origin.'))
   @ApiOkResponse({
     type: CsrfBootstrapApiResponseDto,
-    headers: sessionCookieHeader('A new or unchanged pre-auth session cookie.'),
+    headers: sessionCookieHeader('A new or unchanged session cookie.'),
   })
   @ApiUnauthorizedResponse(
     problemResponse(
-      'Missing, invalid, expired, or revoked pre-auth session; clears the supplied cookie.',
-      'Clears the invalid pre-auth session cookie.',
+      'Invalid, expired, revoked, or logged-out supplied session; clears the supplied cookie.',
+      'Clears the invalid session cookie.',
     ),
   )
-  @ApiForbiddenResponse(problemResponse('Disallowed origin or authenticated session'))
+  @ApiForbiddenResponse(problemResponse('Disallowed origin'))
   @ApiTooManyRequestsResponse(
     problemResponse(
       'CSRF bootstrap source quota is exhausted (csrf_bootstrap_rate_limited).',
@@ -128,6 +139,65 @@ export class IdentityAuthController {
     }
     if (isCsrfBootstrapRejection(result)) throwCsrfBootstrapRejection(result, response);
     throw new ForbiddenException();
+  }
+
+  @Get('me')
+  @ApiOperation({ summary: 'Read the current authenticated identity without renewing the session' })
+  @ApiCookieAuth('preAuthSession')
+  @ApiHeader(requiredRequestHeader('Cookie', 'Current authenticated __Host-session cookie.'))
+  @ApiOkResponse({ type: AuthenticatedIdentityApiResponseDto })
+  @ApiUnauthorizedResponse(
+    problemResponse(
+      'Missing, invalid, expired, revoked, or logged-out authenticated session; clears the supplied cookie.',
+      'Clears the invalid session cookie.',
+    ),
+  )
+  public async getAuthenticatedIdentity(
+    @Req() request: AuthenticatedIdentityHttpRequest,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<AuthenticatedIdentityResponseDto> {
+    const identity = await this.authentication.getAuthenticatedIdentity(
+      readIdentitySessionCookie(request.headers.cookie),
+    );
+    if (identity === null) {
+      clearIdentitySessionCookie(response);
+      throw new UnauthorizedException();
+    }
+    response.setHeader('Cache-Control', 'no-store');
+    return IdentityAuthResponseMapper.toAuthenticatedIdentity(identity);
+  }
+
+  @Post('logout')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @SkipResponseEnvelope()
+  @UseGuards(AuthenticatedCsrfGuard)
+  @ApiOperation({ summary: 'Revoke the current authenticated session without renewing it' })
+  @ApiCookieAuth('preAuthSession')
+  @ApiHeader(requiredRequestHeader('Origin', 'Configured browser origin.'))
+  @ApiHeader({ name: 'X-CSRF-Token', required: true })
+  @ApiNoContentResponse({ headers: sessionCookieHeader('Clears the revoked session cookie.') })
+  @ApiUnauthorizedResponse(
+    problemResponse(
+      'Invalid, expired, revoked, or logged-out authenticated session; clears the supplied cookie.',
+      'Clears the invalid session cookie.',
+    ),
+  )
+  @ApiForbiddenResponse(problemResponse('Origin or CSRF validation failed'))
+  public async logout(
+    @Req() request: AuthenticatedIdentityHttpRequest,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<void> {
+    const context = requireAuthenticatedSession(request);
+    const result = await this.authentication.logout(context);
+    if (result.kind === 'clear_and_unauthorized') {
+      clearIdentitySessionCookie(response);
+      throw new UnauthorizedException();
+    }
+    if (result.kind === 'csrf_invalid') {
+      throw new PublicProblemException(HttpStatus.FORBIDDEN, 'CSRF_INVALID');
+    }
+    if (result.kind === 'forbidden') throw new ForbiddenException();
+    clearIdentitySessionCookie(response);
   }
 
   @Post('register')
@@ -244,6 +314,13 @@ export class IdentityAuthController {
 function requirePreAuth(request: IdentityHttpRequest): PreAuthContext {
   if (request.identityPreAuth === undefined) throw new UnauthorizedException();
   return request.identityPreAuth;
+}
+
+function requireAuthenticatedSession(
+  request: AuthenticatedIdentityHttpRequest,
+): AuthenticatedSessionContext {
+  if (request.identityAuthenticated === undefined) throw new UnauthorizedException();
+  return request.identityAuthenticated;
 }
 
 function translateAuthenticationFailure(error: unknown, response: Response): never {

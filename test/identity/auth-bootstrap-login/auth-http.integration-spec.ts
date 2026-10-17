@@ -419,14 +419,14 @@ describe('Identity HTTP registration and login', () => {
         method: 'get' as const,
         status: '401',
         description:
-          'Missing, invalid, expired, or revoked pre-auth session; clears the supplied cookie.',
+          'Invalid, expired, revoked, or logged-out supplied session; clears the supplied cookie.',
         headers: ['Set-Cookie'],
       },
       {
         path: '/api/v1/auth/csrf',
         method: 'get' as const,
         status: '403',
-        description: 'Disallowed origin or authenticated session',
+        description: 'Disallowed origin',
         headers: [],
       },
       {
