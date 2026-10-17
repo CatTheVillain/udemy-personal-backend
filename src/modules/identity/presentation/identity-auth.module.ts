@@ -6,6 +6,7 @@ import { IDENTITY_CLOCK, SystemIdentityClock } from '../application/identity-clo
 import { ScryptPasswordHasher } from '../application/password-hasher';
 import { IdentityPersistenceModule } from '../infrastructure/persistence/identity-persistence.module';
 import { IdentityAuthController } from './identity-auth.controller';
+import { AuthenticatedCsrfGuard } from './authenticated-csrf.guard';
 import { PreAuthCsrfGuard } from './pre-auth-csrf.guard';
 
 @Module({
@@ -13,6 +14,7 @@ import { PreAuthCsrfGuard } from './pre-auth-csrf.guard';
   controllers: [IdentityAuthController],
   providers: [
     IdentityAuthenticationService,
+    AuthenticatedCsrfGuard,
     PreAuthCsrfGuard,
     ScryptPasswordHasher,
     {

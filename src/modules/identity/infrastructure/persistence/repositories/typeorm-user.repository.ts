@@ -15,6 +15,11 @@ export class TypeOrmUserRepository implements UserRepositoryPort {
     return entity === null ? null : UserPersistenceMapper.toDomain(entity);
   }
 
+  public async findById(id: string): Promise<User | null> {
+    const entity = await this.entityManager.getRepository(UserEntity).findOneBy({ id });
+    return entity === null ? null : UserPersistenceMapper.toDomain(entity);
+  }
+
   public async insert(user: User): Promise<void> {
     await this.entityManager.getRepository(UserEntity).insert(UserPersistenceMapper.toEntity(user));
   }

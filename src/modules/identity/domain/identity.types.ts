@@ -52,6 +52,20 @@ export interface RotatePreAuthCsrfInput {
   readonly now: Date;
 }
 
+export interface RotateAuthenticatedCsrfInput {
+  readonly id: string;
+  readonly tokenHash: string;
+  readonly csrfTokenHash: string;
+  readonly lastSeenAt: Date;
+  readonly idleExpiresAt: Date;
+}
+
+export interface RevokeAuthenticatedSessionInput {
+  readonly id: string;
+  readonly tokenHash: string;
+  readonly csrfTokenHash: string;
+}
+
 export interface ConsumePreAuthSessionInput {
   readonly id: string;
   readonly tokenHash: string;

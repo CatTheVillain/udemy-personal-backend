@@ -48,6 +48,17 @@ export interface PreAuthContext {
   readonly csrfTokenHash: string;
 }
 
+export interface AuthenticatedSessionContext {
+  readonly sessionId: string;
+  readonly tokenHash: string;
+  readonly csrfTokenHash: string;
+}
+
+export interface AuthenticatedIdentity {
+  readonly id: string;
+  readonly email: string;
+}
+
 export interface CsrfBootstrapResult {
   readonly csrfToken: string;
   readonly sessionToken: string;
@@ -60,7 +71,21 @@ export type CsrfBootstrapRejection =
   | { readonly kind: 'capacity_unavailable'; readonly retryAfterSeconds: 60 };
 
 export type CsrfBootstrapOutcome =
-  CsrfBootstrapResult | InitialPreAuthCheck | CsrfBootstrapRejection;
+  CsrfBootstrapResult | InitialPreAuthCheck | AuthenticatedCsrfCheck | CsrfBootstrapRejection;
+
+export type AuthenticatedCsrfCheck =
+  | {
+      readonly kind: 'authenticated_csrf';
+      readonly csrfToken: string;
+      readonly sessionToken: string;
+    }
+  | { readonly kind: 'clear_and_unauthorized' };
+
+export type AuthenticatedSessionCheck =
+  | { readonly kind: 'accepted'; readonly context: AuthenticatedSessionContext }
+  | { readonly kind: 'clear_and_unauthorized' }
+  | { readonly kind: 'forbidden' }
+  | { readonly kind: 'csrf_invalid' };
 
 export interface AuthenticatedSessionResult {
   readonly sessionToken: string;
@@ -110,9 +135,11 @@ export class IdentityAuthenticationService {
     const session = await this.transactions.run({
       execute: async (scope) => scope.sessions.findByTokenHash(tokenHash),
     });
+    if (session === null) return { kind: 'clear_and_unauthorized' };
+    if (session.state === 'authenticated')
+      return this.rotateAuthenticatedCsrf(cookieValue, tokenHash);
     const now = this.clock.now();
-    if (session === null || !isActive(session, now)) return { kind: 'clear_and_unauthorized' };
-    if (session.state === 'authenticated') return { kind: 'forbidden' };
+    if (!isActive(session, now)) return { kind: 'clear_and_unauthorized' };
 
     const csrfToken = createOpaqueIdentityToken();
     const rotated = await this.transactions.run({
@@ -126,6 +153,84 @@ export class IdentityAuthenticationService {
     });
     if (rotated.affectedRows === 0) return { kind: 'clear_and_unauthorized' };
     return { csrfToken, sessionToken: cookieValue };
+  }
+
+  public async getAuthenticatedIdentity(
+    cookieValue: string | undefined,
+  ): Promise<AuthenticatedIdentity | null> {
+    if (cookieValue === undefined || !isOpaqueIdentityToken(cookieValue)) return null;
+    const tokenHash = sha256Hex(cookieValue);
+    return this.transactions.run({
+      execute: async (scope) => {
+        const locked = await scope.sessions.findLockedAuthenticatedByTokenHash(tokenHash);
+        if (locked === null) return null;
+        const current = await scope.sessions.findCurrentLockedAuthenticated(locked.id, tokenHash);
+        if (current === null || current.userId === null) return null;
+        const user = await scope.users.findById(current.userId);
+        if (user === null) return null;
+        return { id: user.id, email: user.normalizedEmail };
+      },
+    });
+  }
+
+  public async checkAuthenticatedCsrf(
+    cookieValue: string | undefined,
+    csrfToken: string | undefined,
+    origin: string | undefined,
+  ): Promise<AuthenticatedSessionCheck> {
+    if (origin === undefined || !this.config.corsAllowedOrigins.includes(origin)) {
+      return { kind: 'forbidden' };
+    }
+    if (cookieValue === undefined || !isOpaqueIdentityToken(cookieValue)) {
+      return { kind: 'clear_and_unauthorized' };
+    }
+    const tokenHash = sha256Hex(cookieValue);
+    return this.transactions.run({
+      execute: async (scope) => {
+        const locked = await scope.sessions.findLockedAuthenticatedByTokenHash(tokenHash);
+        if (locked === null) return { kind: 'clear_and_unauthorized' };
+        const current = await scope.sessions.findCurrentLockedAuthenticated(locked.id, tokenHash);
+        if (current === null) return { kind: 'clear_and_unauthorized' };
+        if (csrfToken === undefined || sha256Hex(csrfToken) !== current.csrfTokenHash) {
+          return { kind: 'csrf_invalid' };
+        }
+        return {
+          kind: 'accepted',
+          context: {
+            sessionId: current.id,
+            tokenHash,
+            csrfTokenHash: current.csrfTokenHash,
+          },
+        };
+      },
+    });
+  }
+
+  public async logout(context: AuthenticatedSessionContext): Promise<AuthenticatedSessionCheck> {
+    return this.transactions.run({
+      execute: async (scope) => {
+        const locked = await scope.sessions.findLockedAuthenticatedByTokenHash(context.tokenHash);
+        if (locked === null || locked.id !== context.sessionId) {
+          return { kind: 'clear_and_unauthorized' };
+        }
+        const current = await scope.sessions.findCurrentLockedAuthenticated(
+          locked.id,
+          context.tokenHash,
+        );
+        if (current === null || current.id !== context.sessionId) {
+          return { kind: 'clear_and_unauthorized' };
+        }
+        if (current.csrfTokenHash !== context.csrfTokenHash) return { kind: 'csrf_invalid' };
+        const revoked = await scope.sessions.revokeCurrentAuthenticatedSession({
+          id: context.sessionId,
+          tokenHash: context.tokenHash,
+          csrfTokenHash: context.csrfTokenHash,
+        });
+        return revoked.affectedRows === 1
+          ? { kind: 'accepted', context }
+          : { kind: 'clear_and_unauthorized' };
+      },
+    });
   }
 
   public async checkInitialPreAuth(
@@ -288,6 +393,36 @@ export class IdentityAuthenticationService {
     return { csrfToken, sessionToken };
   }
 
+  private async rotateAuthenticatedCsrf(
+    sessionToken: string,
+    tokenHash: string,
+  ): Promise<AuthenticatedCsrfCheck> {
+    return this.transactions.run({
+      execute: async (scope) => {
+        const locked = await scope.sessions.findLockedAuthenticatedByTokenHash(tokenHash);
+        if (locked === null) return { kind: 'clear_and_unauthorized' };
+        const now = this.clock.now();
+        if (now < locked.lastSeenAt || now >= locked.absoluteExpiresAt) {
+          return { kind: 'clear_and_unauthorized' };
+        }
+        const csrfToken = createOpaqueIdentityToken();
+        const rotated = await scope.sessions.rotateCurrentAuthenticatedCsrf({
+          id: locked.id,
+          tokenHash,
+          csrfTokenHash: sha256Hex(csrfToken),
+          lastSeenAt: now,
+          idleExpiresAt: minDate(
+            plusMilliseconds(now, AUTH_IDLE_LIFETIME_MS),
+            locked.absoluteExpiresAt,
+          ),
+        });
+        return rotated.affectedRows === 1
+          ? { kind: 'authenticated_csrf', csrfToken, sessionToken }
+          : { kind: 'clear_and_unauthorized' };
+      },
+    });
+  }
+
   private getThrottleKey(
     purpose: ThrottlePurpose,
     canonicalEmail: string,
@@ -384,6 +519,10 @@ function createAuthenticatedSession(userId: string, sessionToken: string, now: D
 
 function plusMilliseconds(value: Date, milliseconds: number): Date {
   return new Date(value.getTime() + milliseconds);
+}
+
+function minDate(first: Date, second: Date): Date {
+  return first <= second ? first : second;
 }
 
 function toDurableThrottleRejection(expiresAt: Date, now: Date): DurableThrottleRejection {

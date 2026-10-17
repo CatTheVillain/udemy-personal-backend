@@ -8,6 +8,8 @@ import {
   RegistrationThrottle,
   RegistrationThrottleLookup,
   RevokeActiveSessionInput,
+  RevokeAuthenticatedSessionInput,
+  RotateAuthenticatedCsrfInput,
   RotatePreAuthCsrfInput,
   Session,
   SessionTransitionResult,
@@ -21,6 +23,7 @@ export const IDENTITY_TRANSACTION_PORT = Symbol('IdentityTransactionPort');
 
 export interface UserRepositoryPort {
   findByNormalizedEmail(normalizedEmail: string): Promise<User | null>;
+  findById(id: string): Promise<User | null>;
   insert(user: User): Promise<void>;
   insertIfAbsent(user: User): Promise<boolean>;
 }
@@ -30,10 +33,18 @@ export interface SessionRepositoryPort {
   findById(id: string): Promise<Session | null>;
   findByTokenHash(tokenHash: string): Promise<Session | null>;
   findLockedById(id: string): Promise<Session | null>;
+  findLockedAuthenticatedByTokenHash(tokenHash: string): Promise<Session | null>;
+  findCurrentLockedAuthenticated(id: string, tokenHash: string): Promise<Session | null>;
   rotateActivePreAuthCsrf(input: RotatePreAuthCsrfInput): Promise<SessionTransitionResult>;
+  rotateCurrentAuthenticatedCsrf(
+    input: RotateAuthenticatedCsrfInput,
+  ): Promise<SessionTransitionResult>;
   consumeLockedPreAuth(input: ConsumePreAuthSessionInput): Promise<SessionTransitionResult>;
   verifyCurrentLockedPreAuth(input: VerifyCurrentPreAuthInput): Promise<SessionTransitionResult>;
   revokeActiveSession(input: RevokeActiveSessionInput): Promise<SessionTransitionResult>;
+  revokeCurrentAuthenticatedSession(
+    input: RevokeAuthenticatedSessionInput,
+  ): Promise<SessionTransitionResult>;
   admitBootstrapPreAuthSession(
     input: BootstrapPreAuthSessionInput,
   ): Promise<BootstrapPreAuthSessionAdmission>;

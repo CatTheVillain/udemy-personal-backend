@@ -7,6 +7,8 @@ import {
   BootstrapPreAuthSessionAdmission,
   BootstrapPreAuthSessionInput,
   RevokeActiveSessionInput,
+  RevokeAuthenticatedSessionInput,
+  RotateAuthenticatedCsrfInput,
   RotatePreAuthCsrfInput,
   Session,
   SessionTransitionResult,
@@ -49,6 +51,35 @@ export class TypeOrmSessionRepository implements SessionRepositoryPort {
     return entity === null ? null : SessionPersistenceMapper.toDomain(entity);
   }
 
+  public async findLockedAuthenticatedByTokenHash(tokenHash: string): Promise<Session | null> {
+    const entity = await this.entityManager
+      .getRepository(SessionEntity)
+      .createQueryBuilder('session')
+      .setLock('pessimistic_write')
+      .where('session.token_hash = :tokenHash', { tokenHash })
+      .andWhere("session.state = 'authenticated'")
+      .andWhere('session.revoked_at IS NULL')
+      .getOne();
+    return entity === null ? null : SessionPersistenceMapper.toDomain(entity);
+  }
+
+  public async findCurrentLockedAuthenticated(
+    id: string,
+    tokenHash: string,
+  ): Promise<Session | null> {
+    const entity = await this.entityManager
+      .getRepository(SessionEntity)
+      .createQueryBuilder('session')
+      .where('session.id = :id', { id })
+      .andWhere('session.token_hash = :tokenHash', { tokenHash })
+      .andWhere("session.state = 'authenticated'")
+      .andWhere('session.revoked_at IS NULL')
+      .andWhere('session.absolute_expires_at > clock_timestamp()')
+      .andWhere('session.idle_expires_at > clock_timestamp()')
+      .getOne();
+    return entity === null ? null : SessionPersistenceMapper.toDomain(entity);
+  }
+
   public async rotateActivePreAuthCsrf(
     input: RotatePreAuthCsrfInput,
   ): Promise<SessionTransitionResult> {
@@ -70,6 +101,27 @@ export class TypeOrmSessionRepository implements SessionRepositoryPort {
       .where('id = :id', { id: input.id })
       .andWhere('token_hash = :tokenHash', { tokenHash: input.tokenHash })
       .andWhere("state = 'pre_auth'")
+      .andWhere('revoked_at IS NULL')
+      .andWhere('absolute_expires_at > clock_timestamp()')
+      .andWhere('idle_expires_at > clock_timestamp()')
+      .execute();
+    return toSessionTransitionResult(result.affected);
+  }
+
+  public async rotateCurrentAuthenticatedCsrf(
+    input: RotateAuthenticatedCsrfInput,
+  ): Promise<SessionTransitionResult> {
+    const result = await this.entityManager
+      .createQueryBuilder()
+      .update(SessionEntity)
+      .set({
+        csrfTokenHash: input.csrfTokenHash,
+        lastSeenAt: input.lastSeenAt,
+        idleExpiresAt: input.idleExpiresAt,
+      })
+      .where('id = :id', { id: input.id })
+      .andWhere('token_hash = :tokenHash', { tokenHash: input.tokenHash })
+      .andWhere("state = 'authenticated'")
       .andWhere('revoked_at IS NULL')
       .andWhere('absolute_expires_at > clock_timestamp()')
       .andWhere('idle_expires_at > clock_timestamp()')
@@ -124,6 +176,24 @@ export class TypeOrmSessionRepository implements SessionRepositoryPort {
       .where('id = :id', { id: input.id })
       .andWhere('token_hash = :tokenHash', { tokenHash: input.tokenHash })
       .andWhere("state IN ('pre_auth', 'authenticated')")
+      .andWhere('revoked_at IS NULL')
+      .andWhere('absolute_expires_at > clock_timestamp()')
+      .andWhere('idle_expires_at > clock_timestamp()')
+      .execute();
+    return toSessionTransitionResult(result.affected);
+  }
+
+  public async revokeCurrentAuthenticatedSession(
+    input: RevokeAuthenticatedSessionInput,
+  ): Promise<SessionTransitionResult> {
+    const result = await this.entityManager
+      .createQueryBuilder()
+      .update(SessionEntity)
+      .set({ state: 'revoked', revokedAt: () => 'clock_timestamp()' })
+      .where('id = :id', { id: input.id })
+      .andWhere('token_hash = :tokenHash', { tokenHash: input.tokenHash })
+      .andWhere('csrf_token_hash = :csrfTokenHash', { csrfTokenHash: input.csrfTokenHash })
+      .andWhere("state = 'authenticated'")
       .andWhere('revoked_at IS NULL')
       .andWhere('absolute_expires_at > clock_timestamp()')
       .andWhere('idle_expires_at > clock_timestamp()')
