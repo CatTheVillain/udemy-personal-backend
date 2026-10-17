@@ -402,6 +402,9 @@ export class IdentityAuthenticationService {
         const locked = await scope.sessions.findLockedAuthenticatedByTokenHash(tokenHash);
         if (locked === null) return { kind: 'clear_and_unauthorized' };
         const now = this.clock.now();
+        if (now < locked.lastSeenAt || now >= locked.absoluteExpiresAt) {
+          return { kind: 'clear_and_unauthorized' };
+        }
         const csrfToken = createOpaqueIdentityToken();
         const rotated = await scope.sessions.rotateCurrentAuthenticatedCsrf({
           id: locked.id,

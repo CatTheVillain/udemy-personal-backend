@@ -85,8 +85,10 @@ describe('Authenticated session HTTP lifecycle', () => {
     restoreEnvironment(prior);
   });
 
-  it('retains pre-auth shared GET csrf behavior and rotates only the real authenticated session row', async () => {
-    const preAuth = await bootstrap(app);
+  it('marks pre-auth and authenticated CSRF responses no-store and rotates only the real authenticated session row', async () => {
+    const preAuthResponse = await request(app.getHttpServer()).get('/api/v1/auth/csrf').expect(200);
+    const preAuth = { cookie: cookie(preAuthResponse), csrfToken: csrf(preAuthResponse) };
+    expect(preAuthResponse.headers['cache-control']).toBe('no-store');
     const preAuthRotation = await request(app.getHttpServer())
       .get('/api/v1/auth/csrf')
       .set('Origin', ORIGIN)
@@ -103,6 +105,7 @@ describe('Authenticated session HTTP lifecycle', () => {
       .expect(200);
     const after = await row(authenticated.cookie);
     expect(cookie(rotation)).toBe(authenticated.cookie);
+    expect(rotation.headers['cache-control']).toBe('no-store');
     expect(after).toMatchObject({
       id: before.id,
       userId: before.userId,
@@ -191,6 +194,81 @@ describe('Authenticated session HTTP lifecycle', () => {
       const capped = await row(authenticated.cookie);
       expect(capped.idleExpiresAt.getTime()).toBe(initial.absoluteExpiresAt.getTime());
       expect(capped.lastSeenAt.getTime()).toBe(start.getTime() + 23 * HOUR);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it.each([24, 25])(
+    'denies authenticated CSRF renewal at or after the app-clock absolute expiry without mutating the database row (%ih)',
+    async (elapsedHours) => {
+      const clock = app.get<IdentityClock>(IDENTITY_CLOCK);
+      const start = new Date('2031-01-01T00:00:00.000Z');
+      const spy = jest.spyOn(clock, 'now').mockReturnValue(start);
+      try {
+        const authenticated = await login(app);
+        const before = await row(authenticated.cookie);
+        spy.mockReturnValue(new Date(start.getTime() + elapsedHours * HOUR));
+        const denied = await request(app.getHttpServer())
+          .get('/api/v1/auth/csrf')
+          .set('Cookie', authenticated.cookie)
+          .expect(401);
+        expect(denied.body.code).toBe('AUTHENTICATION_REQUIRED');
+        expect(rawCookie(denied)).toContain('__Host-session=;');
+        expect(await row(authenticated.cookie)).toEqual(before);
+      } finally {
+        spy.mockRestore();
+      }
+    },
+  );
+
+  it('fails closed when the injected clock moves before the authenticated session creation time', async () => {
+    const clock = app.get<IdentityClock>(IDENTITY_CLOCK);
+    const start = new Date('2031-01-01T00:00:00.000Z');
+    const spy = jest.spyOn(clock, 'now').mockReturnValue(start);
+    try {
+      const authenticated = await login(app);
+      const before = await row(authenticated.cookie);
+      spy.mockReturnValue(new Date(start.getTime() - 1));
+      const denied = await request(app.getHttpServer())
+        .get('/api/v1/auth/csrf')
+        .set('Cookie', authenticated.cookie)
+        .expect(401);
+      expect(denied.body.code).toBe('AUTHENTICATION_REQUIRED');
+      expect(rawCookie(denied)).toContain('__Host-session=;');
+      expect(await row(authenticated.cookie)).toEqual(before);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('accepts an exact last-seen timestamp but fails closed when the injected clock rolls back after renewal', async () => {
+    const clock = app.get<IdentityClock>(IDENTITY_CLOCK);
+    const start = new Date('2031-01-01T00:00:00.000Z');
+    const spy = jest.spyOn(clock, 'now').mockReturnValue(start);
+    try {
+      const authenticated = await login(app);
+      spy.mockReturnValue(new Date(start.getTime() + HOUR));
+      await request(app.getHttpServer())
+        .get('/api/v1/auth/csrf')
+        .set('Cookie', authenticated.cookie)
+        .expect(200);
+      const renewed = await row(authenticated.cookie);
+      await request(app.getHttpServer())
+        .get('/api/v1/auth/csrf')
+        .set('Cookie', authenticated.cookie)
+        .expect(200);
+      const sameTimestamp = await row(authenticated.cookie);
+      expect(sameTimestamp.lastSeenAt).toEqual(renewed.lastSeenAt);
+      expect(sameTimestamp.idleExpiresAt).toEqual(renewed.idleExpiresAt);
+      spy.mockReturnValue(new Date(start.getTime() + 30 * 60 * 1000));
+      const denied = await request(app.getHttpServer())
+        .get('/api/v1/auth/csrf')
+        .set('Cookie', authenticated.cookie)
+        .expect(401);
+      expect(denied.body.code).toBe('AUTHENTICATION_REQUIRED');
+      expect(rawCookie(denied)).toContain('__Host-session=;');
+      expect(await row(authenticated.cookie)).toEqual(sameTimestamp);
     } finally {
       spy.mockRestore();
     }

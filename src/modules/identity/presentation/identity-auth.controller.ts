@@ -130,6 +130,7 @@ export class IdentityAuthController {
       translateAuthenticationFailure(error, response);
     }
     if ('csrfToken' in result) {
+      response.setHeader('Cache-Control', 'no-store');
       setIdentitySessionCookie(response, result.sessionToken);
       return new CsrfBootstrapResponseDto(result.csrfToken);
     }
