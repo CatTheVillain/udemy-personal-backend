@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, ServiceUnavailableException } from '@nestjs/common';
 
 import { canonicalizeIdentityEmail } from '../../../shared/validation/identity-input.validation';
 import { createOpaqueIdentityToken, isOpaqueIdentityToken, sha256Hex } from './auth-secrets';
@@ -30,6 +30,7 @@ import {
   Session,
   ThrottleAdmissionRejection,
 } from '../domain/identity.types';
+import { AccessCapability } from '../domain/access-administration.types';
 
 const PRE_AUTH_LIFETIME_MS = 10 * 60 * 1000;
 const AUTH_IDLE_LIFETIME_MS = 8 * 60 * 60 * 1000;
@@ -57,6 +58,7 @@ export interface AuthenticatedSessionContext {
 export interface AuthenticatedIdentity {
   readonly id: string;
   readonly email: string;
+  readonly capabilities: readonly AccessCapability[];
 }
 
 export interface CsrfBootstrapResult {
@@ -168,7 +170,13 @@ export class IdentityAuthenticationService {
         if (current === null || current.userId === null) return null;
         const user = await scope.users.findById(current.userId);
         if (user === null) return null;
-        return { id: user.id, email: user.normalizedEmail };
+        const access = await scope.accessCapabilities.findActiveProjectionForUser(user.id);
+        if (access.kind === 'unavailable') throw new ServiceUnavailableException();
+        return {
+          id: user.id,
+          email: user.normalizedEmail,
+          capabilities: access.projection.capabilities,
+        };
       },
     });
   }

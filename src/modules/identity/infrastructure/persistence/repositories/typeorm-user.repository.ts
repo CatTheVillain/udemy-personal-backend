@@ -20,6 +20,19 @@ export class TypeOrmUserRepository implements UserRepositoryPort {
     return entity === null ? null : UserPersistenceMapper.toDomain(entity);
   }
 
+  public async findLockedByIds(ids: readonly string[]): Promise<readonly User[]> {
+    const distinctIds = [...new Set(ids)].sort();
+    if (distinctIds.length === 0) return [];
+    const entities = await this.entityManager
+      .getRepository(UserEntity)
+      .createQueryBuilder('user')
+      .setLock('pessimistic_write')
+      .where('user.id IN (:...ids)', { ids: distinctIds })
+      .orderBy('user.id', 'ASC')
+      .getMany();
+    return entities.map(UserPersistenceMapper.toDomain);
+  }
+
   public async insert(user: User): Promise<void> {
     await this.entityManager.getRepository(UserEntity).insert(UserPersistenceMapper.toEntity(user));
   }

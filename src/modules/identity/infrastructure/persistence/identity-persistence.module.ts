@@ -7,6 +7,9 @@ import { LoginThrottleEntity } from './entities/login-throttle.entity';
 import { RegistrationThrottleEntity } from './entities/registration-throttle.entity';
 import { SessionEntity } from './entities/session.entity';
 import { UserEntity } from './entities/user.entity';
+import { AccessCapabilityEntity } from './entities/access-capability.entity';
+import { AccessChangeEntity } from './entities/access-change.entity';
+import { AccessCommandReceiptEntity } from './entities/access-command-receipt.entity';
 import { TypeOrmIdentityTransactionAdapter } from './typeorm-identity-transaction.adapter';
 
 @Module({
@@ -16,6 +19,9 @@ import { TypeOrmIdentityTransactionAdapter } from './typeorm-identity-transactio
       SessionEntity,
       RegistrationThrottleEntity,
       LoginThrottleEntity,
+      AccessCapabilityEntity,
+      AccessChangeEntity,
+      AccessCommandReceiptEntity,
     ]),
   ],
   providers: [

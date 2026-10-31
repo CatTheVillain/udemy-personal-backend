@@ -6,6 +6,7 @@
     "start": "node -r ts-node/register src/main.ts",
     "start:dev": "node --watch -r ts-node/register src/main.ts",
     "start:prod": "node dist/main.js",
+    "access:admin": "node -r ts-node/register src/access-administration.ts",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\" \"scripts/**/*.mjs\" \"*.json\" \"*.mjs\"",
     "format:check": "prettier --check \"src/**/*.ts\" \"test/**/*.ts\" \"scripts/**/*.mjs\" \"*.json\" \"*.mjs\"",
     "lint:source": "eslint src test eslint.config.mjs --max-warnings=0",

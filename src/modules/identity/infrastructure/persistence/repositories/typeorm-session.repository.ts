@@ -80,6 +80,28 @@ export class TypeOrmSessionRepository implements SessionRepositoryPort {
     return entity === null ? null : SessionPersistenceMapper.toDomain(entity);
   }
 
+  public async findAccessAdministrationCurrentLockedAuthenticated(
+    id: string,
+    tokenHash: string,
+  ): Promise<Session | null> {
+    const repository = this.entityManager.getRepository(SessionEntity);
+    const locked = await repository.findOne({
+      where: { id, tokenHash },
+      lock: { mode: 'pessimistic_write' },
+    });
+    if (locked === null) return null;
+    const current = await repository
+      .createQueryBuilder('session')
+      .where('session.id = :id', { id })
+      .andWhere('session.token_hash = :tokenHash', { tokenHash })
+      .andWhere("session.state = 'authenticated'")
+      .andWhere('session.revoked_at IS NULL')
+      .andWhere('session.absolute_expires_at > clock_timestamp()')
+      .andWhere('session.idle_expires_at > clock_timestamp()')
+      .getOne();
+    return current === null ? null : SessionPersistenceMapper.toDomain(current);
+  }
+
   public async rotateActivePreAuthCsrf(
     input: RotatePreAuthCsrfInput,
   ): Promise<SessionTransitionResult> {

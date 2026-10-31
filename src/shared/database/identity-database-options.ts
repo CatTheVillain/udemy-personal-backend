@@ -5,6 +5,10 @@ import { SessionEntity } from '../../modules/identity/infrastructure/persistence
 import { LoginThrottleEntity } from '../../modules/identity/infrastructure/persistence/entities/login-throttle.entity';
 import { RegistrationThrottleEntity } from '../../modules/identity/infrastructure/persistence/entities/registration-throttle.entity';
 import { UserEntity } from '../../modules/identity/infrastructure/persistence/entities/user.entity';
+import { AccessCapabilityEntity } from '../../modules/identity/infrastructure/persistence/entities/access-capability.entity';
+import { AccessChangeEntity } from '../../modules/identity/infrastructure/persistence/entities/access-change.entity';
+import { AccessCommandReceiptEntity } from '../../modules/identity/infrastructure/persistence/entities/access-command-receipt.entity';
+import { AddIdentityAccessAdministration1760832000000 } from '../../migrations/1760832000000-add-identity-access-administration';
 import { InitialIdentityPersistence1760194800000 } from '../../migrations/1760194800000-initial-identity-persistence';
 import { AddIdentityPersistenceInvariants1760194800001 } from '../../migrations/1760194800001-add-identity-persistence-invariants';
 import { AddIdentityThrottleKeyOwners1760270400000 } from '../../migrations/1760270400000-add-identity-throttle-key-owners';
@@ -34,13 +38,22 @@ export function createIdentityDatabaseOptions(options: IdentityDatabaseOptions):
     database: options.database,
     schema: options.schema,
     synchronize: false,
-    entities: [UserEntity, SessionEntity, RegistrationThrottleEntity, LoginThrottleEntity],
+    entities: [
+      UserEntity,
+      SessionEntity,
+      RegistrationThrottleEntity,
+      LoginThrottleEntity,
+      AccessCapabilityEntity,
+      AccessChangeEntity,
+      AccessCommandReceiptEntity,
+    ],
     migrations: [
       InitialIdentityPersistence1760194800000,
       AddIdentityPersistenceInvariants1760194800001,
       AddIdentityThrottleKeyOwners1760270400000,
       AddIdentityBootstrapRetentionIndex1760356800000,
       AddIdentityThrottleRetentionIndexes1760443200000,
+      AddIdentityAccessAdministration1760832000000,
     ],
   };
 }
