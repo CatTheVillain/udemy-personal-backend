@@ -262,6 +262,59 @@ describe('Identity access-administration service', () => {
     expect(await activeCapabilities(source, plan, revokedAdministratorId)).toEqual([]);
   });
 
+  it('rejects both incompatible grants as conflicts without writes, while exact authorized replay wins over later state', async () => {
+    const administratorId = await insertUser(source, plan, 'pair-administrator@example.test');
+    const instructorTargetId = await insertUser(source, plan, 'pair-instructor@example.test');
+    const moderatorTargetId = await insertUser(source, plan, 'pair-moderator@example.test');
+    const ordinaryId = await insertUser(source, plan, 'pair-ordinary@example.test');
+    const bootstrap = randomBytes(32);
+    const service = createService(source, bootstrap, randomBytes(32));
+    await service.execute(operatorCommand(administratorId, bootstrap));
+    const administrator = await insertAuthenticatedSession(source, plan, administratorId);
+    const ordinary = await insertAuthenticatedSession(source, plan, ordinaryId);
+    await source.query(
+      `INSERT INTO "${plan.schemaName}".identity_access_capabilities (user_id, capability, active) VALUES ($1, 'content_moderator', true), ($2, 'instructor', true)`,
+      [instructorTargetId, moderatorTargetId],
+    );
+
+    const beforeConflicts = await accessCounts(source, plan);
+    await expect(
+      service.execute(
+        administratorCommand(administrator, instructorTargetId, 'grant', 'instructor'),
+      ),
+    ).resolves.toEqual({ code: 'access_administration_conflict' });
+    await expect(
+      service.execute(
+        administratorCommand(administrator, moderatorTargetId, 'grant', 'content_moderator'),
+      ),
+    ).resolves.toEqual({ code: 'access_administration_conflict' });
+    expect(await accessCounts(source, plan)).toEqual(beforeConflicts);
+
+    await expect(
+      service.execute(administratorCommand(ordinary, instructorTargetId, 'grant', 'instructor')),
+    ).resolves.toEqual({ code: 'access_administration_forbidden' });
+    expect(await accessCounts(source, plan)).toEqual(beforeConflicts);
+
+    const replayTargetId = await insertUser(source, plan, 'pair-replay@example.test');
+    const completed = administratorCommand(administrator, replayTargetId, 'grant', 'instructor');
+    await expect(service.execute(completed)).resolves.toEqual({
+      code: 'access_administration_completed',
+    });
+    await expect(
+      service.execute(administratorCommand(administrator, replayTargetId, 'revoke', 'instructor')),
+    ).resolves.toEqual({ code: 'access_administration_completed' });
+    await expect(
+      service.execute(
+        administratorCommand(administrator, replayTargetId, 'grant', 'content_moderator'),
+      ),
+    ).resolves.toEqual({ code: 'access_administration_completed' });
+    const beforeReplay = await accessCounts(source, plan);
+    await expect(service.execute(completed)).resolves.toEqual({
+      code: 'access_administration_completed',
+    });
+    expect(await accessCounts(source, plan)).toEqual(beforeReplay);
+  });
+
   it('rolls back the pending receipt, projection, and journal when the real receipt completion collaborator fails', async () => {
     const targetId = await insertUser(source, plan, 'rollback-target@example.test');
     const bootstrap = randomBytes(32);

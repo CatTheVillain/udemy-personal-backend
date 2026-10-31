@@ -82,6 +82,17 @@ export class IdentityAccessAdministrationService {
     );
     if (receiptLookup.kind !== 'absent') return receiptLookup.outcome;
 
+    if (
+      command.action === 'grant' &&
+      (command.capability === 'instructor' || command.capability === 'content_moderator') &&
+      (await scope.accessCapabilities.hasActiveLocked(
+        command.targetUserId,
+        command.capability === 'instructor' ? 'content_moderator' : 'instructor',
+      ))
+    ) {
+      return { code: 'access_administration_conflict' };
+    }
+
     const current = await scope.accessCapabilities.findActiveLocked(
       command.targetUserId,
       command.capability,

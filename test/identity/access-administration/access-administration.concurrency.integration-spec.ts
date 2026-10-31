@@ -180,7 +180,12 @@ describe('Identity access-administration concurrency', () => {
       await waitForUserLockWait(first, plan);
       latch.release();
       const [instructor, moderator] = await Promise.all([leftOperation, rightOperation]);
-      expect([instructor.code, moderator.code]).toContain('access_administration_completed');
+      expect([instructor.code, moderator.code]).toEqual(
+        expect.arrayContaining([
+          'access_administration_completed',
+          'access_administration_conflict',
+        ]),
+      );
       expect(await activeCapabilities(first, plan, target)).toHaveLength(1);
       await expect(
         left.execute(ordinary(administrator, session, independentInstructor, 'instructor')),
