@@ -1,6 +1,6 @@
 import { EntityManager } from 'typeorm';
 
-import { SessionRepositoryPort } from '../../../application/ports/identity.ports';
+import { SessionRepositoryPort } from '../../../application/interfaces/identity.ports';
 import {
   ConsumePreAuthSessionInput,
   VerifyCurrentPreAuthInput,
@@ -15,6 +15,7 @@ import {
 } from '../../../domain/identity.types';
 import { SessionEntity } from '../entities/session.entity';
 import { SessionPersistenceMapper } from '../mappers/session.persistence-mapper';
+import type { Nullable, Optional } from '#shared/types/absence.types';
 
 interface AdvisoryLockRow {
   readonly locked: boolean;
@@ -33,17 +34,17 @@ export class TypeOrmSessionRepository implements SessionRepositoryPort {
       .insert(SessionPersistenceMapper.toEntity(session));
   }
 
-  public async findById(id: string): Promise<Session | null> {
+  public async findById(id: string): Promise<Nullable<Session>> {
     const entity = await this.entityManager.getRepository(SessionEntity).findOneBy({ id });
     return entity === null ? null : SessionPersistenceMapper.toDomain(entity);
   }
 
-  public async findByTokenHash(tokenHash: string): Promise<Session | null> {
+  public async findByTokenHash(tokenHash: string): Promise<Nullable<Session>> {
     const entity = await this.entityManager.getRepository(SessionEntity).findOneBy({ tokenHash });
     return entity === null ? null : SessionPersistenceMapper.toDomain(entity);
   }
 
-  public async findLockedById(id: string): Promise<Session | null> {
+  public async findLockedById(id: string): Promise<Nullable<Session>> {
     const entity = await this.entityManager.getRepository(SessionEntity).findOne({
       where: { id },
       lock: { mode: 'pessimistic_write' },
@@ -51,7 +52,7 @@ export class TypeOrmSessionRepository implements SessionRepositoryPort {
     return entity === null ? null : SessionPersistenceMapper.toDomain(entity);
   }
 
-  public async findLockedAuthenticatedByTokenHash(tokenHash: string): Promise<Session | null> {
+  public async findLockedAuthenticatedByTokenHash(tokenHash: string): Promise<Nullable<Session>> {
     const entity = await this.entityManager
       .getRepository(SessionEntity)
       .createQueryBuilder('session')
@@ -66,7 +67,7 @@ export class TypeOrmSessionRepository implements SessionRepositoryPort {
   public async findCurrentLockedAuthenticated(
     id: string,
     tokenHash: string,
-  ): Promise<Session | null> {
+  ): Promise<Nullable<Session>> {
     const entity = await this.entityManager
       .getRepository(SessionEntity)
       .createQueryBuilder('session')
@@ -83,7 +84,7 @@ export class TypeOrmSessionRepository implements SessionRepositoryPort {
   public async findAccessAdministrationCurrentLockedAuthenticated(
     id: string,
     tokenHash: string,
-  ): Promise<Session | null> {
+  ): Promise<Nullable<Session>> {
     const repository = this.entityManager.getRepository(SessionEntity);
     const locked = await repository.findOne({
       where: { id, tokenHash },
@@ -284,7 +285,7 @@ export class TypeOrmSessionRepository implements SessionRepositoryPort {
   }
 }
 
-function toSessionTransitionResult(affected: number | null | undefined): SessionTransitionResult {
+function toSessionTransitionResult(affected: Optional<Nullable<number>>): SessionTransitionResult {
   if (affected === 0) return { affectedRows: 0 };
   if (affected === 1) return { affectedRows: 1 };
   throw new Error('Unexpected session transition result.');

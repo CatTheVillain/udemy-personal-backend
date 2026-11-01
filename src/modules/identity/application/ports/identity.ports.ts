@@ -29,7 +29,7 @@ import {
   AccessTransition,
 } from '../../domain/access-administration.types';
 
-export const IDENTITY_TRANSACTION_PORT = Symbol('IdentityTransactionPort');
+export { IDENTITY_TRANSACTION_PORT } from '../interfaces/identity.ports';
 
 export interface UserRepositoryPort {
   findByNormalizedEmail(normalizedEmail: string): Promise<User | null>;

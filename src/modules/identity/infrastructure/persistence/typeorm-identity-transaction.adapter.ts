@@ -4,7 +4,7 @@ import {
   IdentityTransactionPort,
   IdentityTransactionScope,
   IdentityTransactionWork,
-} from '../../application/ports/identity.ports';
+} from '../../application/interfaces/identity.ports';
 import { TypeOrmLoginThrottleRepository } from './repositories/typeorm-login-throttle.repository';
 import { TypeOrmRegistrationThrottleRepository } from './repositories/typeorm-registration-throttle.repository';
 import { TypeOrmSessionRepository } from './repositories/typeorm-session.repository';

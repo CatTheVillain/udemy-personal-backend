@@ -2,11 +2,17 @@
   "name": "udemy-personal-backend",
   "version": "0.1.0",
   "private": true,
+  "imports": {
+    "#shared/*": {
+      "development": "./src/shared/*.ts",
+      "default": "./dist/shared/*.js"
+    }
+  },
   "scripts": {
-    "start": "node -r ts-node/register src/main.ts",
-    "start:dev": "node --watch -r ts-node/register src/main.ts",
+    "start": "node --conditions=development -r ts-node/register src/main.ts",
+    "start:dev": "node --conditions=development --watch -r ts-node/register src/main.ts",
     "start:prod": "node dist/main.js",
-    "access:admin": "node -r ts-node/register src/access-administration.ts",
+    "access:admin": "node --conditions=development -r ts-node/register src/access-administration.ts",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\" \"scripts/**/*.mjs\" \"*.json\" \"*.mjs\"",
     "format:check": "prettier --check \"src/**/*.ts\" \"test/**/*.ts\" \"scripts/**/*.mjs\" \"*.json\" \"*.mjs\"",
     "lint:source": "eslint src test eslint.config.mjs --max-warnings=0",
@@ -17,7 +23,7 @@
     "test:e2e": "jest --config test/jest-e2e.json --runInBand --verbose",
     "test:integration": "jest --config test/config/jest-integration.json --runInBand --verbose",
     "test:integration:controls": "jest --config test/config/jest-integration.json --runInBand --verbose --testNamePattern=\"Identity isolated PostgreSQL harness controls\"",
-    "migration:run": "typeorm-ts-node-commonjs migration:run -d src/modules/identity/infrastructure/persistence/identity-data-source.ts",
+    "migration:run": "node --conditions=development -r ts-node/register node_modules/typeorm/cli.js migration:run -d src/modules/identity/infrastructure/persistence/identity-data-source.ts",
     "build": "tsc -p tsconfig.build.json"
   },
   "dependencies": {
@@ -72,6 +78,9 @@
     "testRegex": ".*\\.spec\\.ts$",
     "transform": {
       "^.+\\.(t|j)s$": "ts-jest"
+    },
+    "moduleNameMapper": {
+      "^#shared/(.*)$": "<rootDir>/shared/$1"
     }
   }
 }

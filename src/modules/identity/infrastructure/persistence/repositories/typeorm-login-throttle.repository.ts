@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { EntityManager } from 'typeorm';
 
-import { LoginThrottleRepositoryPort } from '../../../application/ports/identity.ports';
+import { LoginThrottleRepositoryPort } from '../../../application/interfaces/identity.ports';
 import {
   LoginThrottle,
   LoginThrottleLookup,
@@ -12,6 +12,7 @@ import {
 } from '../../../domain/identity.types';
 import { LoginThrottleEntity } from '../entities/login-throttle.entity';
 import { LoginThrottlePersistenceMapper } from '../mappers/login-throttle.persistence-mapper';
+import type { Nullable } from '#shared/types/absence.types';
 
 const THROTTLE_CAPACITY = 10_000;
 const THROTTLE_CLEANUP_LIMIT = 256;
@@ -28,7 +29,7 @@ interface PopulationRow {
 export class TypeOrmLoginThrottleRepository implements LoginThrottleRepositoryPort {
   public constructor(private readonly entityManager: EntityManager) {}
 
-  public async findByKeyAndWindow(lookup: LoginThrottleLookup): Promise<LoginThrottle | null> {
+  public async findByKeyAndWindow(lookup: LoginThrottleLookup): Promise<Nullable<LoginThrottle>> {
     const entity = await this.entityManager.getRepository(LoginThrottleEntity).findOneBy({
       keyHash: lookup.keyHash,
       windowStartedAt: lookup.windowStartedAt,
@@ -112,7 +113,7 @@ export class TypeOrmLoginThrottleRepository implements LoginThrottleRepositoryPo
     await repository.save(entity);
   }
 
-  private async admitFirstSeen(): Promise<ThrottleAdmissionRejection | null> {
+  private async admitFirstSeen(): Promise<Nullable<ThrottleAdmissionRejection>> {
     const table = this.entityManager.getRepository(LoginThrottleEntity).metadata.tablePath;
     const lock = await this.entityManager.query<AdvisoryLockRow[]>(
       'SELECT pg_try_advisory_xact_lock($1) AS locked',

@@ -5,18 +5,16 @@ import {
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
-import { Request, Response } from 'express';
+import { Response } from 'express';
 
+import { IdentityAuthenticationService } from '../../../application/authentication/services/identity-authentication.service';
+import { PublicProblemException } from '#shared/http/public-problem.exception';
 import {
-  IdentityAuthenticationService,
-  PreAuthContext,
-} from '../application/identity-authentication.service';
-import { PublicProblemException } from '../../../shared/http/public-problem.exception';
-import { clearIdentitySessionCookie, readIdentitySessionCookie } from './identity-session-cookie';
-
-export interface IdentityHttpRequest extends Request {
-  identityPreAuth?: PreAuthContext;
-}
+  clearIdentitySessionCookie,
+  readIdentitySessionCookie,
+} from '../cookies/identity-session-cookie';
+import { readCsrfHeader } from '../helpers/identity-http-request.helpers';
+import { IdentityHttpRequest } from '../interfaces/identity-http-request';
 
 @Injectable()
 export class PreAuthCsrfGuard implements CanActivate {
@@ -25,11 +23,11 @@ export class PreAuthCsrfGuard implements CanActivate {
   public async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<IdentityHttpRequest>();
     const response = context.switchToHttp().getResponse<Response>();
-    const check = await this.authentication.checkInitialPreAuth(
-      readIdentitySessionCookie(request.headers.cookie),
-      readCsrfHeader(request),
-      request.headers.origin,
-    );
+    const check = await this.authentication.checkInitialPreAuth({
+      cookieValue: readIdentitySessionCookie(request.headers.cookie),
+      csrfToken: readCsrfHeader(request),
+      origin: request.headers.origin,
+    });
     if (check.kind === 'accepted') {
       request.identityPreAuth = check.context;
       return true;
@@ -43,10 +41,4 @@ export class PreAuthCsrfGuard implements CanActivate {
     }
     throw new ForbiddenException();
   }
-}
-
-function readCsrfHeader(request: IdentityHttpRequest): string | undefined {
-  const value = request.headers['x-csrf-token'];
-  if (Array.isArray(value)) return undefined;
-  return value;
 }

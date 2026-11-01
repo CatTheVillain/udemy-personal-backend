@@ -1,10 +1,14 @@
 {
   "moduleFileExtensions": ["js", "json", "ts"],
   "rootDir": "../..",
+  "roots": ["<rootDir>/src", "<rootDir>/test"],
   "testEnvironment": "node",
   "testTimeout": 240000,
   "testMatch": ["<rootDir>/test/identity/**/*.integration-spec.ts"],
   "transform": {
     "^.+\\.(t|j)s$": "ts-jest"
+  },
+  "moduleNameMapper": {
+    "^#shared/(.*)$": "<rootDir>/src/shared/$1"
   }
 }

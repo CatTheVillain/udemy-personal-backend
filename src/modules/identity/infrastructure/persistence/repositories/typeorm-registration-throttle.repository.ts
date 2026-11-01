@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { EntityManager } from 'typeorm';
 
-import { RegistrationThrottleRepositoryPort } from '../../../application/ports/identity.ports';
+import { RegistrationThrottleRepositoryPort } from '../../../application/interfaces/identity.ports';
 import {
   RegistrationThrottle,
   RegistrationThrottleLookup,
@@ -10,6 +10,7 @@ import {
 } from '../../../domain/identity.types';
 import { RegistrationThrottleEntity } from '../entities/registration-throttle.entity';
 import { RegistrationThrottlePersistenceMapper } from '../mappers/registration-throttle.persistence-mapper';
+import type { Nullable } from '#shared/types/absence.types';
 
 const THROTTLE_CAPACITY = 10_000;
 const THROTTLE_CLEANUP_LIMIT = 256;
@@ -28,7 +29,7 @@ export class TypeOrmRegistrationThrottleRepository implements RegistrationThrott
 
   public async findByKeyAndWindow(
     lookup: RegistrationThrottleLookup,
-  ): Promise<RegistrationThrottle | null> {
+  ): Promise<Nullable<RegistrationThrottle>> {
     const entity = await this.entityManager.getRepository(RegistrationThrottleEntity).findOneBy({
       keyHash: lookup.keyHash,
       windowStartedAt: lookup.windowStartedAt,

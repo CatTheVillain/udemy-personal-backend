@@ -13,6 +13,7 @@ import {
   IDENTITY_TRANSACTION_PORT,
   IdentityTransactionPort,
 } from '../../src/modules/identity/application/ports/identity.ports';
+import { IDENTITY_TRANSACTION_PORT as CANONICAL_IDENTITY_TRANSACTION_PORT } from '../../src/modules/identity/application/interfaces/identity.ports';
 import { UserEntity } from '../../src/modules/identity/infrastructure/persistence/entities/user.entity';
 import { createIdentityDataSource } from '../../src/shared/database/identity-database-options';
 import { configureApplication } from '../../src/main';
@@ -48,6 +49,10 @@ type ClosableApplication = Pick<INestApplication, 'close'>;
 type DestroyableDataSource = Pick<DataSource, 'destroy' | 'isInitialized'>;
 
 describe('Identity AppModule database composition', () => {
+  it('retains one transaction DI token across the legacy and canonical application ports', () => {
+    expect(IDENTITY_TRANSACTION_PORT).toBe(CANONICAL_IDENTITY_TRANSACTION_PORT);
+  });
+
   it('fails missing database configuration before TypeORM opens a connection', async () => {
     const previous = captureDatabaseEnvironment();
     const initialize = jest.spyOn(DataSource.prototype, 'initialize');
