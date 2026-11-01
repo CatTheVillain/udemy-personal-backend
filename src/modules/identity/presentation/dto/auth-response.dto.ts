@@ -1,5 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 
+import { AccessCapability } from '../../domain/access-administration.types';
+
 export class CsrfBootstrapResponseDto {
   @ApiProperty()
   public readonly csrfToken: string;
@@ -27,6 +29,18 @@ export class LoginResponseDto {
   }
 }
 
+export class AuthenticatedIdentityAccessResponseDto {
+  @ApiProperty({
+    enum: ['instructor', 'content_moderator', 'administrator'],
+    isArray: true,
+  })
+  public readonly capabilities: readonly AccessCapability[];
+
+  public constructor(capabilities: readonly AccessCapability[]) {
+    this.capabilities = capabilities;
+  }
+}
+
 export class AuthenticatedIdentityResponseDto {
   @ApiProperty()
   public readonly id: string;
@@ -34,9 +48,13 @@ export class AuthenticatedIdentityResponseDto {
   @ApiProperty()
   public readonly email: string;
 
-  public constructor(id: string, email: string) {
+  @ApiProperty({ type: () => AuthenticatedIdentityAccessResponseDto })
+  public readonly access: AuthenticatedIdentityAccessResponseDto;
+
+  public constructor(id: string, email: string, capabilities: readonly AccessCapability[]) {
     this.id = id;
     this.email = email;
+    this.access = new AuthenticatedIdentityAccessResponseDto(capabilities);
   }
 }
 

@@ -153,10 +153,14 @@ export class IdentityAuthController {
       'Clears the invalid session cookie.',
     ),
   )
+  @ApiServiceUnavailableResponse(
+    problemResponse('Current access facts are temporarily unavailable.'),
+  )
   public async getAuthenticatedIdentity(
     @Req() request: AuthenticatedIdentityHttpRequest,
     @Res({ passthrough: true }) response: Response,
   ): Promise<AuthenticatedIdentityResponseDto> {
+    response.setHeader('Cache-Control', 'no-store');
     const identity = await this.authentication.getAuthenticatedIdentity(
       readIdentitySessionCookie(request.headers.cookie),
     );
@@ -164,7 +168,6 @@ export class IdentityAuthController {
       clearIdentitySessionCookie(response);
       throw new UnauthorizedException();
     }
-    response.setHeader('Cache-Control', 'no-store');
     return IdentityAuthResponseMapper.toAuthenticatedIdentity(identity);
   }
 

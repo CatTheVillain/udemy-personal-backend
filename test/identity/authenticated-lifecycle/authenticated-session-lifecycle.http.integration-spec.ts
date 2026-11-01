@@ -1,16 +1,21 @@
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { createServer } from 'node:net';
 import { Writable } from 'node:stream';
 import { INestApplication } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import request, { Response } from 'supertest';
 import { DataSource } from 'typeorm';
 import { AppModule } from '../../../src/app.module';
+import { IdentityAccessAdministrationCredentialsConfig } from '../../../src/modules/identity/application/access-administration-config';
+import { IdentityAccessAdministrationService } from '../../../src/modules/identity/application/identity-access-administration.service';
+import { ConfigOperatorCredentialVerifier } from '../../../src/modules/identity/application/operator-credential-verifier';
 import {
   IDENTITY_CLOCK,
   IdentityClock,
 } from '../../../src/modules/identity/application/identity-clock';
 import { SessionEntity } from '../../../src/modules/identity/infrastructure/persistence/entities/session.entity';
+import { TypeOrmIdentityTransactionAdapter } from '../../../src/modules/identity/infrastructure/persistence/typeorm-identity-transaction.adapter';
 import { createIdentityDataSource } from '../../../src/shared/database/identity-database-options';
 import { ApplicationOptions, configureApplication } from '../../../src/main';
 import {
@@ -40,13 +45,14 @@ type SessionView = Pick<
 describe('Authenticated session HTTP lifecycle', () => {
   let app: INestApplication;
   let observer: DataSource;
+  let plan: IsolatedPostgresPlan;
   let cleanup: (() => Promise<void>) | undefined;
   let prior: Map<string, string | undefined>;
   let logOutput = '';
 
   beforeAll(async () => {
     prior = savedEnvironment();
-    const plan = createIsolatedPostgresPlan(
+    plan = createIsolatedPostgresPlan(
       createIsolatedPostgresEnvironment(randomBytes(32).toString('hex'), await loopbackPort()),
     );
     const run = await startIsolatedPostgres(plan);
@@ -117,7 +123,7 @@ describe('Authenticated session HTTP lifecycle', () => {
     expect(after.lastSeenAt.getTime()).toBeGreaterThanOrEqual(before.lastSeenAt.getTime());
   });
 
-  it('maps /me to id and email only, no-store, without mutating its authenticated row', async () => {
+  it('maps /me to the additive access envelope, no-store, without mutating its authenticated row', async () => {
     const authenticated = await login(app);
     const before = await row(authenticated.cookie);
     const response = await request(app.getHttpServer())
@@ -126,9 +132,128 @@ describe('Authenticated session HTTP lifecycle', () => {
       .expect(200);
     const after = await row(authenticated.cookie);
     expect(response.headers['cache-control']).toBe('no-store');
-    expect(response.body).toEqual({ data: { id: before.userId, email: authenticated.email } });
+    expect(response.body).toEqual({
+      data: { id: before.userId, email: authenticated.email, access: { capabilities: [] } },
+    });
     expect(response.text).not.toMatch(/password|csrf|token|hash|expires|lastSeen/i);
     expect(after).toEqual(before);
+  });
+
+  it('projects committed current access facts without leaking another account capabilities', async () => {
+    const authenticated = await login(app);
+    const other = await login(app);
+    const current = await row(authenticated.cookie);
+    if (current.userId === null) throw new Error('Expected authenticated user id.');
+    const userId = current.userId;
+    const credential = randomBytes(32);
+    const recovery = randomBytes(32);
+    const config = IdentityAccessAdministrationCredentialsConfig.from({
+      IDENTITY_ACCESS_BOOTSTRAP_CREDENTIAL: credential.toString('base64url'),
+      IDENTITY_ACCESS_RECOVERY_CREDENTIAL: recovery.toString('base64url'),
+    });
+    const service = new IdentityAccessAdministrationService(
+      new TypeOrmIdentityTransactionAdapter(observer),
+      new ConfigOperatorCredentialVerifier(config),
+    );
+    try {
+      await expect(
+        service.execute({
+          kind: 'operator',
+          purpose: 'bootstrap',
+          credential,
+          commandId: randomUUID(),
+          targetUserId: userId,
+          action: 'grant',
+          capability: 'administrator',
+          reason: 'synthetic HTTP projection proof',
+          reference: 'independent test',
+        }),
+      ).resolves.toEqual({ code: 'access_administration_completed' });
+      await expect(accessProjection(app, authenticated.cookie)).resolves.toEqual(['administrator']);
+      await expect(accessProjection(app, other.cookie)).resolves.toEqual([]);
+
+      await expect(
+        service.execute({
+          kind: 'administrator',
+          actorSessionId: current.id,
+          actorTokenHash: hash(cookieValue(authenticated.cookie)),
+          commandId: randomUUID(),
+          targetUserId: userId,
+          action: 'grant',
+          capability: 'content_moderator',
+          reason: 'synthetic HTTP projection proof',
+          reference: 'independent test',
+        }),
+      ).resolves.toEqual({ code: 'access_administration_completed' });
+      await expect(accessProjection(app, authenticated.cookie)).resolves.toEqual([
+        'administrator',
+        'content_moderator',
+      ]);
+
+      await expect(
+        service.execute({
+          kind: 'administrator',
+          actorSessionId: current.id,
+          actorTokenHash: hash(cookieValue(authenticated.cookie)),
+          commandId: randomUUID(),
+          targetUserId: userId,
+          action: 'revoke',
+          capability: 'content_moderator',
+          reason: 'synthetic HTTP projection proof',
+          reference: 'independent test',
+        }),
+      ).resolves.toEqual({ code: 'access_administration_completed' });
+      await expect(accessProjection(app, authenticated.cookie)).resolves.toEqual(['administrator']);
+    } finally {
+      config.destroy();
+      credential.fill(0);
+      recovery.fill(0);
+    }
+  });
+
+  it('returns a safe unavailable response without mutating a valid session, then recovers after the authority read is restored', async () => {
+    const authenticated = await login(app);
+    const before = await row(authenticated.cookie);
+    const table = `"${plan.schemaName}".identity_access_capabilities`;
+    await observer.query(`ALTER TABLE ${table} RENAME TO identity_access_capabilities_unavailable`);
+    try {
+      const unavailable = await request(app.getHttpServer())
+        .get('/api/v1/auth/me')
+        .set('Cookie', authenticated.cookie)
+        .expect(503);
+      expect(unavailable.headers['cache-control']).toBe('no-store');
+      expect(unavailable.headers['set-cookie']).toBeUndefined();
+      expect(unavailable.headers['content-type']).toMatch(/^application\/problem\+json/);
+      expect(unavailable.body.code).toBe('HTTP_ERROR');
+      expect(unavailable.text).not.toContain('identity_access_capabilities');
+      expect(await row(authenticated.cookie)).toEqual(before);
+    } finally {
+      await observer.query(
+        `ALTER TABLE "${plan.schemaName}".identity_access_capabilities_unavailable RENAME TO identity_access_capabilities`,
+      );
+    }
+    await expect(accessProjection(app, authenticated.cookie)).resolves.toEqual([]);
+    expect(await row(authenticated.cookie)).toEqual(before);
+  });
+
+  it('publishes the additive access schema and current-facts 503 response in OpenAPI', () => {
+    const document = SwaggerModule.createDocument(
+      app,
+      new DocumentBuilder().setTitle('Udemy Personal Backend').build(),
+    );
+    const operation = document.paths['/api/v1/auth/me']?.get;
+    expect(operation?.responses['503']).toMatchObject({
+      description: 'Current access facts are temporarily unavailable.',
+      content: {
+        'application/problem+json': { schema: { $ref: '#/components/schemas/ProblemDetailsDto' } },
+      },
+    });
+    expect(document.components?.schemas?.AuthenticatedIdentityResponseDto).toMatchObject({
+      required: ['id', 'email', 'access'],
+      properties: {
+        access: { $ref: '#/components/schemas/AuthenticatedIdentityAccessResponseDto' },
+      },
+    });
   });
 
   it('captures a legitimate safe Pino completion event while keeping secrets and client identity selectors out of logs and bodies', async () => {
@@ -145,7 +270,9 @@ describe('Authenticated session HTTP lifecycle', () => {
       .get(`/api/v1/auth/me?id=${queryMarker}&email=${emailMarker}`)
       .set('Cookie', authenticated.cookie)
       .expect(200);
-    expect(projection.body).toEqual({ data: { id: before.userId, email: authenticated.email } });
+    expect(projection.body).toEqual({
+      data: { id: before.userId, email: authenticated.email, access: { capabilities: [] } },
+    });
     const problem = await request(app.getHttpServer())
       .post(`/api/v1/auth/login?token=${queryMarker}`)
       .set('Origin', ORIGIN)
@@ -409,6 +536,22 @@ async function activeCsrf(app: INestApplication, value: string): Promise<string>
   return csrf(
     await request(app.getHttpServer()).get('/api/v1/auth/csrf').set('Cookie', value).expect(200),
   );
+}
+async function accessProjection(
+  app: INestApplication,
+  sessionCookie: string,
+): Promise<readonly string[]> {
+  const response = await request(app.getHttpServer())
+    .get('/api/v1/auth/me')
+    .set('Cookie', sessionCookie)
+    .expect(200);
+  expect(response.headers['cache-control']).toBe('no-store');
+  expect(response.headers['set-cookie']).toBeUndefined();
+  const capabilities = response.body?.data?.access?.capabilities;
+  if (!Array.isArray(capabilities) || capabilities.some((value) => typeof value !== 'string')) {
+    throw new Error('Expected access capabilities.');
+  }
+  return capabilities;
 }
 function hash(value: string): string {
   return createHash('sha256').update(value).digest('hex');

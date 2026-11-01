@@ -8,6 +8,7 @@ import { AddIdentityPersistenceInvariants1760194800001 } from '../../../src/migr
 import { AddIdentityThrottleKeyOwners1760270400000 } from '../../../src/migrations/1760270400000-add-identity-throttle-key-owners';
 import { AddIdentityBootstrapRetentionIndex1760356800000 } from '../../../src/migrations/1760356800000-add-identity-bootstrap-retention-index';
 import { AddIdentityThrottleRetentionIndexes1760443200000 } from '../../../src/migrations/1760443200000-add-identity-throttle-retention-indexes';
+import { AddIdentityAccessAdministration1760832000000 } from '../../../src/migrations/1760832000000-add-identity-access-administration';
 import {
   createIdentityDataSource,
   createIdentityDatabaseOptions,
@@ -123,6 +124,7 @@ describe('Identity throttle key-owner migration', () => {
         AddIdentityThrottleKeyOwners1760270400000,
         AddIdentityBootstrapRetentionIndex1760356800000,
         AddIdentityThrottleRetentionIndexes1760443200000,
+        AddIdentityAccessAdministration1760832000000,
       ]);
       await registered.runMigrations();
       expect(await readThrottleRows(registered, plan)).toHaveLength(4);
