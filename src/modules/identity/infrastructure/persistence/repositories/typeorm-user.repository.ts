@@ -1,21 +1,22 @@
 import { EntityManager } from 'typeorm';
 
-import { UserRepositoryPort } from '../../../application/ports/identity.ports';
+import { UserRepositoryPort } from '../../../application/interfaces/identity.ports';
 import { User } from '../../../domain/identity.types';
 import { UserEntity } from '../entities/user.entity';
 import { UserPersistenceMapper } from '../mappers/user.persistence-mapper';
+import type { Nullable } from '#shared/types/absence.types';
 
 export class TypeOrmUserRepository implements UserRepositoryPort {
   public constructor(private readonly entityManager: EntityManager) {}
 
-  public async findByNormalizedEmail(normalizedEmail: string): Promise<User | null> {
+  public async findByNormalizedEmail(normalizedEmail: string): Promise<Nullable<User>> {
     const entity = await this.entityManager
       .getRepository(UserEntity)
       .findOneBy({ normalizedEmail });
     return entity === null ? null : UserPersistenceMapper.toDomain(entity);
   }
 
-  public async findById(id: string): Promise<User | null> {
+  public async findById(id: string): Promise<Nullable<User>> {
     const entity = await this.entityManager.getRepository(UserEntity).findOneBy({ id });
     return entity === null ? null : UserPersistenceMapper.toDomain(entity);
   }

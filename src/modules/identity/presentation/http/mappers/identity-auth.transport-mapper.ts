@@ -1,6 +1,6 @@
-import { AuthEmailPasswordCommand } from '../application/identity-authentication.service';
-import { AuthEmailPasswordRequestDto } from './dto/auth-email-password.request.dto';
-import { IdentityHttpRequest } from './pre-auth-csrf.guard';
+import { AuthEmailPasswordCommand } from '../../../application/authentication/contracts/identity-authentication.contracts';
+import { AuthEmailPasswordRequestDto } from '../dto/auth-email-password.request.dto';
+import { IdentityHttpRequest } from '../interfaces/identity-http-request';
 
 export class IdentityAuthTransportMapper {
   public static toCommand(

@@ -1,10 +1,11 @@
 import { Response } from 'express';
+import type { Optional } from '#shared/types/absence.types';
 
 const SESSION_COOKIE_NAME = '__Host-session';
 
-export function readIdentitySessionCookie(header: string | undefined): string | undefined {
+export function readIdentitySessionCookie(header: Optional<string>): Optional<string> {
   if (header === undefined) return undefined;
-  let value: string | undefined;
+  let value: Optional<string>;
   for (const part of header.split(';')) {
     const pair = part.trimStart();
     const separator = pair.indexOf('=');

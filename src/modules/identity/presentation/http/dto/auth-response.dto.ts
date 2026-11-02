@@ -1,6 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 
-import { AccessCapability } from '../../domain/access-administration.types';
+import { AccessCapability } from '../../../domain/access-administration.types';
 
 export class CsrfBootstrapResponseDto {
   @ApiProperty()

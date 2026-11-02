@@ -13,7 +13,7 @@ import { ConfigOperatorCredentialVerifier } from '../../../src/modules/identity/
 import {
   IDENTITY_CLOCK,
   IdentityClock,
-} from '../../../src/modules/identity/application/identity-clock';
+} from '../../../src/modules/identity/application/authentication/contracts/identity-clock.contracts';
 import { SessionEntity } from '../../../src/modules/identity/infrastructure/persistence/entities/session.entity';
 import { TypeOrmIdentityTransactionAdapter } from '../../../src/modules/identity/infrastructure/persistence/typeorm-identity-transaction.adapter';
 import { createIdentityDataSource } from '../../../src/shared/database/identity-database-options';

@@ -8,10 +8,10 @@ import request, { Response } from 'supertest';
 import { DataSource } from 'typeorm';
 
 import { AppModule } from '../../../src/app.module';
-import { IdentityAuthConfig } from '../../../src/modules/identity/application/identity-auth.config';
-import { ScryptPasswordHasher } from '../../../src/modules/identity/application/password-hasher';
-import { PasswordWorkLimiter } from '../../../src/modules/identity/application/password-work-limiter';
-import { createThrottleKey } from '../../../src/modules/identity/application/throttle-key';
+import { IdentityAuthConfig } from '../../../src/modules/identity/application/authentication/config/identity-auth.config';
+import { createThrottleKey } from '../../../src/modules/identity/application/authentication/helpers/throttle-key';
+import { ScryptPasswordHasher } from '../../../src/modules/identity/application/credentials/services/password-hasher';
+import { PasswordWorkLimiter } from '../../../src/modules/identity/application/credentials/services/password-work-limiter';
 import { RegistrationThrottleEntity } from '../../../src/modules/identity/infrastructure/persistence/entities/registration-throttle.entity';
 import { LoginThrottleEntity } from '../../../src/modules/identity/infrastructure/persistence/entities/login-throttle.entity';
 import { SessionEntity } from '../../../src/modules/identity/infrastructure/persistence/entities/session.entity';
@@ -514,7 +514,8 @@ async function createScopedScryptFailureApplication(
   });
   try {
     await jest.isolateModulesAsync(async () => {
-      const isolated = await import('../../../src/modules/identity/application/password-hasher');
+      const isolated =
+        await import('../../../src/modules/identity/application/credentials/services/password-hasher');
       IsolatedHasher = isolated.ScryptPasswordHasher;
     });
     if (IsolatedHasher === undefined) throw new Error('Isolated hasher was unavailable.');

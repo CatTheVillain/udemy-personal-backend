@@ -7,8 +7,8 @@ import request, { Response } from 'supertest';
 import { DataSource } from 'typeorm';
 
 import { AppModule } from '../../../src/app.module';
-import { sha256Hex } from '../../../src/modules/identity/application/auth-secrets';
-import { CsrfBootstrapLimiter } from '../../../src/modules/identity/application/csrf-bootstrap-limiter';
+import { CsrfBootstrapLimiter } from '../../../src/modules/identity/application/authentication/helpers/csrf-bootstrap-limiter';
+import { sha256Hex } from '../../../src/modules/identity/application/authentication/helpers/auth-secrets';
 import { SessionEntity } from '../../../src/modules/identity/infrastructure/persistence/entities/session.entity';
 import { TypeOrmSessionRepository } from '../../../src/modules/identity/infrastructure/persistence/repositories/typeorm-session.repository';
 import { createIdentityDataSource } from '../../../src/shared/database/identity-database-options';

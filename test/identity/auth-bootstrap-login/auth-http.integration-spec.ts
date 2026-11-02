@@ -8,13 +8,13 @@ import request, { Response } from 'supertest';
 import { DataSource } from 'typeorm';
 
 import { AppModule } from '../../../src/app.module';
-import { IdentityAuthConfig } from '../../../src/modules/identity/application/identity-auth.config';
+import { IdentityAuthConfig } from '../../../src/modules/identity/application/authentication/config/identity-auth.config';
 import {
   IDENTITY_CLOCK,
   IdentityClock,
-} from '../../../src/modules/identity/application/identity-clock';
-import { ScryptPasswordHasher } from '../../../src/modules/identity/application/password-hasher';
-import { createThrottleKey } from '../../../src/modules/identity/application/throttle-key';
+} from '../../../src/modules/identity/application/authentication/contracts/identity-clock.contracts';
+import { createThrottleKey } from '../../../src/modules/identity/application/authentication/helpers/throttle-key';
+import { ScryptPasswordHasher } from '../../../src/modules/identity/application/credentials/services/password-hasher';
 import { LoginThrottleEntity } from '../../../src/modules/identity/infrastructure/persistence/entities/login-throttle.entity';
 import { RegistrationThrottleEntity } from '../../../src/modules/identity/infrastructure/persistence/entities/registration-throttle.entity';
 import { SessionEntity } from '../../../src/modules/identity/infrastructure/persistence/entities/session.entity';

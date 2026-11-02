@@ -1,0 +1,677 @@
+{
+  "paths": {
+    "/api/v1/auth/csrf": {
+      "get": {
+        "operationId": "IdentityAuthController_bootstrapCsrf",
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "description": "Optional configured browser origin.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Cookie",
+            "in": "header",
+            "description": "Optional __Host-session cookie.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "headers": {
+              "Set-Cookie": {
+                "description": "A new or unchanged session cookie.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CsrfBootstrapApiResponseDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid, expired, revoked, or logged-out supplied session; clears the supplied cookie.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            },
+            "headers": {
+              "Set-Cookie": {
+                "description": "Clears the invalid session cookie.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Disallowed origin",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "CSRF bootstrap source quota is exhausted (csrf_bootstrap_rate_limited).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "description": "Retry time.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "CSRF bootstrap admission is temporarily unavailable (csrf_bootstrap_unavailable, csrf_bootstrap_busy, or csrf_bootstrap_capacity_unavailable).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "description": "Advisory retry time.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Bootstrap or rotate the CSRF token for the current session",
+        "tags": ["identity"]
+      }
+    },
+    "/api/v1/auth/me": {
+      "get": {
+        "operationId": "IdentityAuthController_getAuthenticatedIdentity",
+        "parameters": [
+          {
+            "name": "Cookie",
+            "in": "header",
+            "description": "Current authenticated __Host-session cookie.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthenticatedIdentityApiResponseDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, invalid, expired, revoked, or logged-out authenticated session; clears the supplied cookie.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            },
+            "headers": {
+              "Set-Cookie": {
+                "description": "Clears the invalid session cookie.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Current access facts are temporarily unavailable.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "preAuthSession": []
+          }
+        ],
+        "summary": "Read the current authenticated identity without renewing the session",
+        "tags": ["identity"]
+      }
+    },
+    "/api/v1/auth/logout": {
+      "post": {
+        "operationId": "IdentityAuthController_logout",
+        "parameters": [
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Origin",
+            "in": "header",
+            "description": "Configured browser origin.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "headers": {
+              "Set-Cookie": {
+                "description": "Clears the revoked session cookie.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "description": "Invalid, expired, revoked, or logged-out authenticated session; clears the supplied cookie.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            },
+            "headers": {
+              "Set-Cookie": {
+                "description": "Clears the invalid session cookie.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Origin or CSRF validation failed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "preAuthSession": []
+          }
+        ],
+        "summary": "Revoke the current authenticated session without renewing it",
+        "tags": ["identity"]
+      }
+    },
+    "/api/v1/auth/register": {
+      "post": {
+        "operationId": "IdentityAuthController_register",
+        "parameters": [
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Origin",
+            "in": "header",
+            "description": "Configured browser origin.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AuthEmailPasswordRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "headers": {
+              "Set-Cookie": {
+                "description": "Clears the consumed pre-auth session cookie after commit.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegistrationApiResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid pre-auth session; clears the supplied cookie.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            },
+            "headers": {
+              "Set-Cookie": {
+                "description": "Clears the invalid cookie.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Origin or CSRF validation failed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The email is already registered",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Registration or password-work throttle is exhausted",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "description": "Retry time.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Password-work or durable throttle capacity is temporarily unavailable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "description": "Advisory retry time.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "preAuthSession": []
+          }
+        ],
+        "summary": "Register a normal base account without authenticating it",
+        "tags": ["identity"]
+      }
+    },
+    "/api/v1/auth/login": {
+      "post": {
+        "operationId": "IdentityAuthController_login",
+        "parameters": [
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Origin",
+            "in": "header",
+            "description": "Configured browser origin.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AuthEmailPasswordRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "headers": {
+              "Set-Cookie": {
+                "description": "Sets a fresh authenticated session cookie after commit.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginApiResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Credentials are invalid or pre-auth is invalid. The cookie is cleared only for invalid pre-auth.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            },
+            "headers": {
+              "Set-Cookie": {
+                "description": "Clears the cookie only when the pre-auth session is invalid; absent for credentials_invalid.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Origin or CSRF validation failed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Login or password-work throttle is exhausted",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "description": "Retry time.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Password-work or durable throttle capacity is temporarily unavailable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetailsDto"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "description": "Advisory retry time.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "preAuthSession": []
+          }
+        ],
+        "summary": "Authenticate with a pre-auth CSRF session",
+        "tags": ["identity"]
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "CsrfBootstrapResponseDto": {
+        "type": "object",
+        "properties": {
+          "csrfToken": {
+            "type": "string"
+          }
+        },
+        "required": ["csrfToken"]
+      },
+      "CsrfBootstrapApiResponseDto": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/CsrfBootstrapResponseDto"
+          }
+        },
+        "required": ["data"]
+      },
+      "AuthenticatedIdentityAccessResponseDto": {
+        "type": "object",
+        "properties": {
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": ["instructor", "content_moderator", "administrator"]
+            }
+          }
+        },
+        "required": ["capabilities"]
+      },
+      "AuthenticatedIdentityResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "access": {
+            "$ref": "#/components/schemas/AuthenticatedIdentityAccessResponseDto"
+          }
+        },
+        "required": ["id", "email", "access"]
+      },
+      "AuthenticatedIdentityApiResponseDto": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/AuthenticatedIdentityResponseDto"
+          }
+        },
+        "required": ["data"]
+      },
+      "RegistrationResponseDto": {
+        "type": "object",
+        "properties": {
+          "registered": {
+            "type": "boolean",
+            "example": true
+          }
+        },
+        "required": ["registered"]
+      },
+      "RegistrationApiResponseDto": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/RegistrationResponseDto"
+          }
+        },
+        "required": ["data"]
+      },
+      "LoginResponseDto": {
+        "type": "object",
+        "properties": {
+          "authenticated": {
+            "type": "boolean",
+            "example": true
+          }
+        },
+        "required": ["authenticated"]
+      },
+      "LoginApiResponseDto": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/LoginResponseDto"
+          }
+        },
+        "required": ["data"]
+      },
+      "ProblemDetailsDto": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "example": "about:blank"
+          },
+          "title": {
+            "type": "string",
+            "example": "Bad Request"
+          },
+          "status": {
+            "type": "number",
+            "example": 400
+          },
+          "detail": {
+            "type": "string",
+            "example": "The request is invalid."
+          },
+          "code": {
+            "type": "string",
+            "example": "REQUEST_INVALID"
+          },
+          "requestId": {
+            "type": "string",
+            "example": "fdc5f4d6-8f47-4cfb-8f54-0b5bb90c8d0f"
+          },
+          "instance": {
+            "type": "string",
+            "example": "urn:problem:fdc5f4d6-8f47-4cfb-8f54-0b5bb90c8d0f"
+          }
+        },
+        "required": ["type", "title", "status", "detail", "code", "requestId"]
+      },
+      "AuthEmailPasswordRequestDto": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "example": "student@example.test",
+            "minLength": 1,
+            "maxLength": 254
+          },
+          "password": {
+            "type": "string",
+            "example": "not-a-real-password"
+          }
+        },
+        "required": ["email", "password"]
+      }
+    }
+  }
+}
