@@ -1,6 +1,7 @@
 import { parseArgs } from 'node:util';
 
 import { OperatorCredentialPurpose } from '../application/access-administration/config/access-administration-config';
+import type { Optional } from '#shared/types/absence.types';
 
 export interface OperatorInvocationInput {
   readonly purpose: OperatorCredentialPurpose;
@@ -30,7 +31,7 @@ const OPTION_NAMES = new Set([
 export class OperatorInvocationParser {
   public parse(argv: readonly string[]): OperatorInvocationInput {
     rejectRepeatedOrUnknownOptions(argv);
-    let values: Record<string, string | boolean | undefined>;
+    let values: Record<string, Optional<string | boolean>>;
     try {
       values = parseArgs({
         args: argv,

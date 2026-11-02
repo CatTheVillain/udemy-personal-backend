@@ -13,6 +13,7 @@ import { AuthEmailPasswordRequestDto } from '../dto/auth-email-password.request.
 import { IdentityHttpRequest } from '../interfaces/identity-http-request';
 import { IdentityAuthController } from '../controllers/identity-auth.controller';
 import { ProblemDetailsFilter } from '#shared/http/problem-details.filter';
+import type { Optional } from '#shared/types/absence.types';
 
 interface CapturedProblemBody {
   readonly code: string;
@@ -36,7 +37,7 @@ interface ResponseCapture {
   readonly clearCookie: jest.Mock;
   readonly cookie: jest.Mock;
   readonly headers: ReadonlyMap<string, unknown>;
-  readonly capturedProblem: () => CapturedProblem | undefined;
+  readonly capturedProblem: () => Optional<CapturedProblem>;
 }
 
 type AuthenticationOutcomes = Partial<
@@ -370,7 +371,7 @@ function renderProblem(exception: unknown, response: Response): void {
 
 function responseCapture(): ResponseCapture {
   const headers = new Map<string, unknown>();
-  let captured: CapturedProblem | undefined;
+  let captured: Optional<CapturedProblem>;
   const response = {} as Response;
   const clearCookie = jest.fn();
   const cookie = jest.fn();
@@ -403,6 +404,6 @@ function responseCapture(): ResponseCapture {
     clearCookie,
     cookie,
     headers,
-    capturedProblem: (): CapturedProblem | undefined => captured,
+    capturedProblem: (): Optional<CapturedProblem> => captured,
   };
 }

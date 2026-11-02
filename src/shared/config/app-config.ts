@@ -30,7 +30,7 @@ export class AppConfig {
   }
 }
 
-function parseEnvironment(value: string | undefined): ApplicationEnvironment {
+function parseEnvironment(value: Optional<string>): ApplicationEnvironment {
   if (value === undefined || value === 'development') {
     return 'development';
   }
@@ -42,7 +42,7 @@ function parseEnvironment(value: string | undefined): ApplicationEnvironment {
   throw new Error('Invalid application configuration.');
 }
 
-function parsePort(value: string | undefined): number {
+function parsePort(value: Optional<string>): number {
   if (value === undefined) {
     return DEFAULT_PORT;
   }
@@ -56,7 +56,7 @@ function parsePort(value: string | undefined): number {
 }
 
 function parseAllowedOrigins(
-  value: string | undefined,
+  value: Optional<string>,
   environment: ApplicationEnvironment,
 ): readonly string[] {
   const origins = value === undefined ? [] : value.split(',').map((origin) => origin.trim());
@@ -96,3 +96,4 @@ function validateOrigin(origin: string, environment: ApplicationEnvironment): vo
     throw new Error('Invalid application configuration.');
   }
 }
+import type { Optional } from '#shared/types/absence.types';

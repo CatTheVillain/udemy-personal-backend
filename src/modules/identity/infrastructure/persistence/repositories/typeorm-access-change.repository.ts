@@ -1,9 +1,9 @@
 import { EntityManager } from 'typeorm';
 
-import {
+import type {
   AccessChangeRepositoryPort,
   NewAccessChange,
-} from '../../../application/ports/identity.ports';
+} from '../../../application/interfaces/identity.ports';
 import { AccessChange } from '../../../domain/access-administration.types';
 import { AccessChangeEntity } from '../entities/access-change.entity';
 import { AccessChangePersistenceMapper } from '../mappers/access-change.persistence-mapper';

@@ -1,6 +1,7 @@
 import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
 
 import { SessionState } from '../../../domain/identity.types';
+import type { Nullable } from '#shared/types/absence.types';
 
 @Entity({ name: 'identity_sessions' })
 export class SessionEntity {
@@ -8,7 +9,7 @@ export class SessionEntity {
   public id!: string;
 
   @Column({ name: 'user_id', type: 'uuid', nullable: true })
-  public userId!: string | null;
+  public userId!: Nullable<string>;
 
   @Column({ name: 'token_hash', type: 'char', length: 64 })
   public tokenHash!: string;
@@ -32,5 +33,5 @@ export class SessionEntity {
   public idleExpiresAt!: Date;
 
   @Column({ name: 'revoked_at', type: 'timestamptz', nullable: true })
-  public revokedAt!: Date | null;
+  public revokedAt!: Nullable<Date>;
 }

@@ -8,11 +8,11 @@ import pino from 'pino';
 import { pinoHttp } from 'pino-http';
 
 import { AppModule } from './app.module';
-import { AppConfig } from './shared/config/app-config';
-import { ApiResponseInterceptor } from './shared/http/api-response.interceptor';
-import { ProblemDetailsFilter } from './shared/http/problem-details.filter';
-import { requestCorrelationMiddleware } from './shared/http/request-correlation';
-import { createPinoHttpOptions } from './shared/logging/pino-http-options';
+import { AppConfig } from '#shared/config/app-config';
+import { ApiResponseInterceptor } from '#shared/http/api-response.interceptor';
+import { ProblemDetailsFilter } from '#shared/http/problem-details.filter';
+import { requestCorrelationMiddleware } from '#shared/http/request-correlation';
+import { createPinoHttpOptions } from '#shared/logging/pino-http-options';
 
 export const API_PREFIX = 'api/v1';
 

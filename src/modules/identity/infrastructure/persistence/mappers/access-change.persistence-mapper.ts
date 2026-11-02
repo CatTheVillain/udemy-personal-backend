@@ -1,5 +1,5 @@
 import { AccessChange } from '../../../domain/access-administration.types';
-import { NewAccessChange } from '../../../application/ports/identity.ports';
+import type { NewAccessChange } from '../../../application/interfaces/identity.ports';
 import { AccessChangeEntity } from '../entities/access-change.entity';
 
 export class AccessChangePersistenceMapper {

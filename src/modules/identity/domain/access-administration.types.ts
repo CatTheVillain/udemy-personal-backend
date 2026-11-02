@@ -56,8 +56,9 @@ export interface AccessCommandReceipt {
   readonly reference: string;
   readonly semanticFingerprint: string;
   readonly state: AccessReceiptState;
-  readonly outcomeCode: string | null;
-  readonly changeId: string | null;
+  readonly outcomeCode: Nullable<string>;
+  readonly changeId: Nullable<string>;
   readonly createdAt: Date;
   readonly updatedAt: Date;
 }
+import type { Nullable } from '#shared/types/absence.types';

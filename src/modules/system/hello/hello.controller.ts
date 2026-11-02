@@ -8,7 +8,7 @@ import {
   getSchemaPath,
 } from '@nestjs/swagger';
 
-import { ProblemDetailsDto } from '../../../shared/http/problem-details';
+import { ProblemDetailsDto } from '#shared/http/problem-details';
 import { HelloApiResponseDto, HelloResponseDto } from './hello-response.dto';
 
 @ApiTags('system')

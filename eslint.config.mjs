@@ -30,6 +30,21 @@ const restrictedTypeSyntax = [
   },
 ];
 
+const absenceUnionSyntax = {
+  selector: 'TSUnionType:has(> :matches(TSUndefinedKeyword, TSNullKeyword))',
+  message: 'Use Optional<T> and Nullable<T> instead of raw null or undefined unions.',
+};
+
+const forwardRefRestriction = {
+  name: '@nestjs/common',
+  importNames: ['forwardRef'],
+  message: 'Repair the dependency direction instead of using forwardRef.',
+};
+
+function restrictedImports(patterns = [], paths = []) {
+  return ['error', { paths: [forwardRefRestriction, ...paths], patterns }];
+}
+
 export default [
   {
     ignores: [
@@ -58,18 +73,14 @@ export default [
       '@typescript-eslint/ban-ts-comment': 'error',
       '@typescript-eslint/no-explicit-any': 'error',
       'no-restricted-syntax': ['error', ...restrictedTypeSyntax],
-      'no-restricted-imports': [
-        'error',
-        {
-          paths: [
-            {
-              name: '@nestjs/common',
-              importNames: ['forwardRef'],
-              message: 'Repair the dependency direction instead of using forwardRef.',
-            },
-          ],
-        },
-      ],
+      'no-restricted-imports': restrictedImports(),
+    },
+  },
+  {
+    files: ['src/**/*.ts'],
+    ignores: ['src/shared/types/absence.types.ts'],
+    rules: {
+      'no-restricted-syntax': ['error', ...restrictedTypeSyntax, absenceUnionSyntax],
     },
   },
   {
@@ -82,6 +93,120 @@ export default [
           allowTypedFunctionExpressions: true,
         },
       ],
+    },
+  },
+  {
+    files: ['src/modules/**/domain/**/*.ts'],
+    rules: {
+      'no-restricted-imports': restrictedImports(
+        [
+          {
+            group: [
+              '@nestjs/*',
+              'typeorm',
+              '@nestjs/typeorm',
+              '**/application/**',
+              '**/presentation/**',
+              '**/infrastructure/**',
+              '**/shared/**',
+            ],
+            message:
+              'Domain code must remain independent of framework and outer layers; only type-only absence contracts use #shared.',
+          },
+          {
+            regex: '^#shared/(?!types/absence\\.types$)',
+            message:
+              'Domain code must remain independent of framework and outer layers; only type-only absence contracts use #shared.',
+          },
+        ],
+        [
+          {
+            name: '#shared/types/absence.types',
+            allowTypeImports: true,
+            message: 'Domain may import Nullable and Optional only as types.',
+          },
+        ],
+      ),
+    },
+  },
+  {
+    files: ['src/modules/**/application/**/*.ts'],
+    rules: {
+      'no-restricted-imports': restrictedImports(
+        [
+          {
+            group: [
+              '**/presentation/**',
+              '**/infrastructure/**',
+              '**/shared/**',
+              '#shared/http/**',
+              '#shared/database/**',
+              'typeorm',
+              '@nestjs/typeorm',
+            ],
+            message:
+              'Application code must not depend on presentation or persistence adapters; shared imports use #shared.',
+          },
+        ],
+        [
+          {
+            name: '@nestjs/common',
+            importNames: [
+              'HttpException',
+              'BadRequestException',
+              'ConflictException',
+              'ForbiddenException',
+              'NotFoundException',
+              'ServiceUnavailableException',
+              'UnauthorizedException',
+            ],
+            message: 'Translate HTTP failures in presentation, not application.',
+          },
+        ],
+      ),
+    },
+  },
+  {
+    files: ['src/modules/**/infrastructure/**/*.ts'],
+    rules: {
+      'no-restricted-imports': restrictedImports([
+        {
+          group: ['**/presentation/**', '**/shared/**'],
+          message:
+            'Infrastructure adapters must not depend on presentation; shared imports use #shared.',
+        },
+      ]),
+    },
+  },
+  {
+    files: ['src/shared/**/*.ts'],
+    rules: {
+      'no-restricted-imports': restrictedImports([
+        { group: ['**/modules/**'], message: 'Shared code must not depend on feature ownership.' },
+      ]),
+    },
+  },
+  {
+    files: ['src/modules/**/presentation/**/*.ts'],
+    rules: {
+      'no-restricted-imports': restrictedImports([
+        {
+          group: ['**/shared/**'],
+          message: 'Presentation imports shared contracts through #shared.',
+        },
+      ]),
+    },
+  },
+  {
+    files: ['src/modules/**/presentation/**/controllers/**/*.ts'],
+    rules: {
+      'no-restricted-imports': restrictedImports([
+        {
+          group: ['**/infrastructure/**', '**/shared/**'],
+          message:
+            'Controllers use application contracts and #shared, not infrastructure adapters or relative shared imports.',
+        },
+      ]),
     },
   },
 ];

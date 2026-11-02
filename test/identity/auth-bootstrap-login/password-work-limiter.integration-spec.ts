@@ -1,10 +1,10 @@
-import { PasswordWorkLimiter } from '../../../src/modules/identity/application/password-work-limiter';
-import { CsrfBootstrapLimiter } from '../../../src/modules/identity/application/csrf-bootstrap-limiter';
-import { IdentityAuthConfig } from '../../../src/modules/identity/application/identity-auth.config';
+import { IdentityAuthConfig } from '../../../src/modules/identity/application/authentication/config/identity-auth.config';
+import { CsrfBootstrapLimiter } from '../../../src/modules/identity/application/authentication/helpers/csrf-bootstrap-limiter';
 import {
   createCsrfBootstrapSourceKey,
   createPasswordWorkSourceKey,
-} from '../../../src/modules/identity/application/throttle-key';
+} from '../../../src/modules/identity/application/authentication/helpers/throttle-key';
+import { PasswordWorkLimiter } from '../../../src/modules/identity/application/credentials/services/password-work-limiter';
 
 describe('Password work limiter', () => {
   it('shares ten started-password-work admissions by source and rounds the remaining window', () => {

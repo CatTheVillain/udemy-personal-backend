@@ -6,6 +6,7 @@ import {
   AccessPrincipalKind,
   AccessReceiptState,
 } from '../../../domain/access-administration.types';
+import type { Nullable } from '#shared/types/absence.types';
 
 @Entity({ name: 'identity_access_command_receipts' })
 export class AccessCommandReceiptEntity {
@@ -23,8 +24,8 @@ export class AccessCommandReceiptEntity {
   public semanticFingerprint!: string;
   @Column({ type: 'varchar', length: 16 }) public state!: AccessReceiptState;
   @Column({ name: 'outcome_code', type: 'varchar', length: 64, nullable: true })
-  public outcomeCode!: string | null;
-  @Column({ name: 'change_id', type: 'uuid', nullable: true }) public changeId!: string | null;
+  public outcomeCode!: Nullable<string>;
+  @Column({ name: 'change_id', type: 'uuid', nullable: true }) public changeId!: Nullable<string>;
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' }) public createdAt!: Date;
   @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' }) public updatedAt!: Date;
 }

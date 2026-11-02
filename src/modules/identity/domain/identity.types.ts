@@ -12,7 +12,7 @@ export interface User {
 
 export interface Session {
   readonly id: string;
-  readonly userId: string | null;
+  readonly userId: Nullable<string>;
   readonly tokenHash: string;
   readonly csrfTokenHash: string;
   readonly state: SessionState;
@@ -20,7 +20,7 @@ export interface Session {
   readonly lastSeenAt: Date;
   readonly absoluteExpiresAt: Date;
   readonly idleExpiresAt: Date;
-  readonly revokedAt: Date | null;
+  readonly revokedAt: Nullable<Date>;
 }
 
 export interface RegistrationThrottle {
@@ -124,3 +124,4 @@ export interface LoginThrottleLookup {
   readonly keyHash: string;
   readonly windowStartedAt: Date;
 }
+import type { Nullable } from '#shared/types/absence.types';
