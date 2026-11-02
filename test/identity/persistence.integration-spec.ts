@@ -3,7 +3,7 @@ import { createServer } from 'node:net';
 
 import { DataSource } from 'typeorm';
 
-import { IdentityTransactionScope } from '../../src/modules/identity/application/ports/identity.ports';
+import { IdentityTransactionScope } from '../../src/modules/identity/application/interfaces/identity.ports';
 import {
   LoginThrottle,
   RegistrationThrottle,

@@ -1,5 +1,5 @@
 import { AccessCommandReceipt } from '../../../domain/access-administration.types';
-import { NewAccessCommandReceipt } from '../../../application/ports/identity.ports';
+import type { NewAccessCommandReceipt } from '../../../application/interfaces/identity.ports';
 import { AccessCommandReceiptEntity } from '../entities/access-command-receipt.entity';
 
 export class AccessReceiptPersistenceMapper {

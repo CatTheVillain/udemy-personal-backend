@@ -1,6 +1,6 @@
 import { EntityManager } from 'typeorm';
 
-import { AccessCapabilityRepositoryPort } from '../../../application/ports/identity.ports';
+import type { AccessCapabilityRepositoryPort } from '../../../application/interfaces/identity.ports';
 import {
   AccessCapability,
   AccessCapabilityProjectionRead,
@@ -9,6 +9,7 @@ import {
 } from '../../../domain/access-administration.types';
 import { AccessCapabilityEntity } from '../entities/access-capability.entity';
 import { AccessCapabilityPersistenceMapper } from '../mappers/access-capability.persistence-mapper';
+import type { Nullable } from '#shared/types/absence.types';
 
 export class TypeOrmAccessCapabilityRepository implements AccessCapabilityRepositoryPort {
   public constructor(private readonly entityManager: EntityManager) {}
@@ -34,7 +35,7 @@ export class TypeOrmAccessCapabilityRepository implements AccessCapabilityReposi
   public async findActiveLocked(
     userId: string,
     capability: AccessCapability,
-  ): Promise<AccessCapabilityRecord | null> {
+  ): Promise<Nullable<AccessCapabilityRecord>> {
     const entity = await this.entityManager.getRepository(AccessCapabilityEntity).findOne({
       where: { userId, capability, active: true },
       lock: { mode: 'pessimistic_write' },
@@ -60,7 +61,7 @@ export class TypeOrmAccessCapabilityRepository implements AccessCapabilityReposi
 
   public async applyTransition(
     transition: AccessTransition,
-  ): Promise<AccessCapabilityRecord | null> {
+  ): Promise<Nullable<AccessCapabilityRecord>> {
     const repository = this.entityManager.getRepository(AccessCapabilityEntity);
     const active = await this.findActiveLocked(transition.userId, transition.capability);
     if (transition.action === 'grant') {

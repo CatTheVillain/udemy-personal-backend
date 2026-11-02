@@ -2,6 +2,7 @@ import 'reflect-metadata';
 
 import { INestApplicationContext } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import type { Optional } from '#shared/types/absence.types';
 
 import { decodeCanonicalCredential } from './modules/identity/application/access-administration/config/access-administration-config';
 import { AccessAdministrationOutcome } from './modules/identity/application/access-administration/contracts/access-administration.contracts';
@@ -18,8 +19,8 @@ export async function runAccessAdministrationEntrypoint(
   argv: readonly string[],
   environment: NodeJS.ProcessEnv,
 ): Promise<AccessAdministrationExitCode> {
-  let credential: Buffer | undefined;
-  let app: INestApplicationContext | undefined;
+  let credential: Optional<Buffer>;
+  let app: Optional<INestApplicationContext>;
   try {
     const input = new OperatorInvocationParser().parse(argv);
     credential = takeInvocationCredential(environment);

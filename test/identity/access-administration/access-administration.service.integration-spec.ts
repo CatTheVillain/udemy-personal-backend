@@ -9,7 +9,7 @@ import {
   IdentityTransactionPort,
   IdentityTransactionScope,
   IdentityTransactionWork,
-} from '../../../src/modules/identity/application/ports/identity.ports';
+} from '../../../src/modules/identity/application/interfaces/identity.ports';
 import { ConfigOperatorCredentialVerifier } from '../../../src/modules/identity/application/access-administration/services/operator-credential-verifier';
 import { TypeOrmIdentityTransactionAdapter } from '../../../src/modules/identity/infrastructure/persistence/typeorm-identity-transaction.adapter';
 import { createIdentityDataSource } from '../../../src/modules/identity/infrastructure/persistence/composition/identity-database-options';

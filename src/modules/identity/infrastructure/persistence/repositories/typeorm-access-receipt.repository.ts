@@ -1,14 +1,15 @@
 import { EntityManager, QueryFailedError } from 'typeorm';
 
-import {
+import type {
   AccessReceiptCompletion,
   AccessReceiptPendingInsertResult,
   AccessReceiptRepositoryPort,
   NewAccessCommandReceipt,
-} from '../../../application/ports/identity.ports';
+} from '../../../application/interfaces/identity.ports';
 import { AccessCommandReceipt } from '../../../domain/access-administration.types';
 import { AccessCommandReceiptEntity } from '../entities/access-command-receipt.entity';
 import { AccessReceiptPersistenceMapper } from '../mappers/access-receipt.persistence-mapper';
+import type { Nullable } from '#shared/types/absence.types';
 
 const COMMAND_RECEIPT_CONSTRAINT = 'uq_identity_access_command_receipts_command_id';
 
@@ -20,7 +21,7 @@ interface PostgresErrorDetails {
 export class TypeOrmAccessReceiptRepository implements AccessReceiptRepositoryPort {
   public constructor(private readonly entityManager: EntityManager) {}
 
-  public async findByCommandId(commandId: string): Promise<AccessCommandReceipt | null> {
+  public async findByCommandId(commandId: string): Promise<Nullable<AccessCommandReceipt>> {
     const entity = await this.entityManager
       .getRepository(AccessCommandReceiptEntity)
       .findOneBy({ commandId });

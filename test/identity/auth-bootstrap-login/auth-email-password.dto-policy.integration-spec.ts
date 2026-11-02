@@ -2,7 +2,7 @@ import { Body, Controller, INestApplication, Module, Post } from '@nestjs/common
 import { NestFactory } from '@nestjs/core';
 import request from 'supertest';
 
-import { AuthEmailPasswordRequestDto } from '../../../src/modules/identity/presentation/dto/auth-email-password.request.dto';
+import { AuthEmailPasswordRequestDto } from '../../../src/modules/identity/presentation/http/dto/auth-email-password.request.dto';
 import { configureApplication } from '../../../src/main';
 
 class AcceptedAuthDtoResponse {

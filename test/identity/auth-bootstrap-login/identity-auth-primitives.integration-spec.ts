@@ -1,8 +1,8 @@
 import { randomBytes } from 'node:crypto';
 
-import { IdentityAuthConfig } from '../../../src/modules/identity/application/identity-auth.config';
-import { ScryptPasswordHasher } from '../../../src/modules/identity/application/password-hasher';
-import { createThrottleKey } from '../../../src/modules/identity/application/throttle-key';
+import { IdentityAuthConfig } from '../../../src/modules/identity/application/authentication/config/identity-auth.config';
+import { createThrottleKey } from '../../../src/modules/identity/application/authentication/helpers/throttle-key';
+import { ScryptPasswordHasher } from '../../../src/modules/identity/application/credentials/services/password-hasher';
 
 const HMAC_SECRET = randomBytes(32).toString('base64url');
 

@@ -4,6 +4,7 @@ import {
   AccessCapabilityRecord,
 } from '../../../domain/access-administration.types';
 import { AccessCapabilityEntity } from '../entities/access-capability.entity';
+import type { Nullable } from '#shared/types/absence.types';
 
 export class AccessCapabilityPersistenceMapper {
   public static toDomain(entity: AccessCapabilityEntity): AccessCapabilityRecord {
@@ -31,7 +32,7 @@ export class AccessCapabilityPersistenceMapper {
   }
 }
 
-function readRawCapability(row: unknown): AccessCapability | null {
+function readRawCapability(row: unknown): Nullable<AccessCapability> {
   if (!isRecord(row)) return null;
   const capability = row.capability;
   if (

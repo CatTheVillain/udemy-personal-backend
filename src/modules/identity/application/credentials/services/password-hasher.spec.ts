@@ -1,4 +1,5 @@
 import { ScryptPasswordHasher } from './password-hasher';
+import type { Optional } from '#shared/types/absence.types';
 
 describe('ScryptPasswordHasher', () => {
   it('stores and verifies the approved versioned scrypt record', async () => {
@@ -29,7 +30,7 @@ describe('ScryptPasswordHasher', () => {
     ],
   ])('rejects the exact scoped scrypt callback error from %s', async (_method, operation) => {
     const marker = new Error(`SCF callback ${_method}`);
-    let loaded: IsolatedHasher | undefined;
+    let loaded: Optional<IsolatedHasher>;
     try {
       loaded = await loadIsolatedHasher((_actualScrypt, calls) => (...arguments_) => {
         calls.increment();
@@ -48,7 +49,7 @@ describe('ScryptPasswordHasher', () => {
 
   it('turns a scoped synchronous scrypt throw into a rejected Promise', async () => {
     const marker = new Error('SCF synchronous scrypt throw');
-    let loaded: IsolatedHasher | undefined;
+    let loaded: Optional<IsolatedHasher>;
     try {
       loaded = await loadIsolatedHasher((_actualScrypt, calls) => () => {
         calls.increment();
@@ -89,7 +90,7 @@ class ScopedCallCounter {
 
 async function loadIsolatedHasher(replacement: ScryptReplacement): Promise<IsolatedHasher> {
   const calls = new ScopedCallCounter();
-  let Hasher: typeof ScryptPasswordHasher | undefined;
+  let Hasher: Optional<typeof ScryptPasswordHasher>;
   jest.resetModules();
   jest.doMock('node:crypto', () => {
     const actual = jest.requireActual<typeof import('node:crypto')>('node:crypto');

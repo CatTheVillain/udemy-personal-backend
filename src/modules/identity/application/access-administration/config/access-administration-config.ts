@@ -1,4 +1,5 @@
 import { timingSafeEqual } from 'node:crypto';
+import type { Nullable, Optional } from '#shared/types/absence.types';
 
 export type OperatorCredentialPurpose = 'bootstrap' | 'recovery';
 
@@ -40,7 +41,7 @@ export class IdentityAccessAdministrationCredentialsConfig {
   }
 }
 
-export function decodeCanonicalCredential(value: string | undefined): Buffer | null {
+export function decodeCanonicalCredential(value: Optional<string>): Nullable<Buffer> {
   if (value === undefined || !/^[A-Za-z0-9_-]+$/.test(value)) return null;
   const decoded = Buffer.from(value, 'base64url');
   if (decoded.length < MINIMUM_CREDENTIAL_BYTES || decoded.toString('base64url') !== value) {

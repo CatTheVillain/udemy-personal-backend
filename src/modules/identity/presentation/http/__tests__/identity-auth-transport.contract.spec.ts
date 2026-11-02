@@ -24,6 +24,7 @@ import {
   AuthenticatedIdentityHttpRequest,
   IdentityHttpRequest,
 } from '../interfaces/identity-http-request';
+import type { Optional } from '#shared/types/absence.types';
 
 type AuthenticationTransportCollaborator = Pick<
   IdentityAuthenticationService,
@@ -220,8 +221,11 @@ function executionContextFor(request: IdentityHttpRequest): ExecutionContext {
 }
 
 function customFactory(method: string): RouteArgumentFactory {
-  const metadata = Reflect.getMetadata(ROUTE_ARGS_METADATA, IdentityAuthController, method) as
-    RouteArgumentMetadata | undefined;
+  const metadata = Reflect.getMetadata(
+    ROUTE_ARGS_METADATA,
+    IdentityAuthController,
+    method,
+  ) as Optional<RouteArgumentMetadata>;
   const entry = metadata === undefined ? undefined : Object.values(metadata).find(isCustomFactory);
   if (entry?.factory === undefined) {
     throw new Error(`Missing custom decorator for ${method}`);

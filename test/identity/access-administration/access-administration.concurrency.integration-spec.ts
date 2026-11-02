@@ -14,7 +14,7 @@ import {
   IdentityTransactionScope,
   IdentityTransactionWork,
   UserRepositoryPort,
-} from '../../../src/modules/identity/application/ports/identity.ports';
+} from '../../../src/modules/identity/application/interfaces/identity.ports';
 import { User } from '../../../src/modules/identity/domain/identity.types';
 import { TypeOrmAccessAdministrationLockRepository } from '../../../src/modules/identity/infrastructure/persistence/repositories/typeorm-access-administration-lock.repository';
 import { TypeOrmAccessCapabilityRepository } from '../../../src/modules/identity/infrastructure/persistence/repositories/typeorm-access-capability.repository';

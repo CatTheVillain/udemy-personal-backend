@@ -1,4 +1,5 @@
 import { IdentityDatabaseOptions } from './identity-database-options';
+import type { Optional } from '#shared/types/absence.types';
 
 export class IdentityDatabaseConfig implements IdentityDatabaseOptions {
   public readonly host: string;
@@ -36,7 +37,7 @@ export class IdentityDatabaseConfig implements IdentityDatabaseOptions {
   }
 }
 
-function requiredValue(value: string | undefined): string {
+function requiredValue(value: Optional<string>): string {
   if (value === undefined || value.trim().length === 0) {
     throw new Error('Invalid database configuration.');
   }
@@ -44,7 +45,7 @@ function requiredValue(value: string | undefined): string {
   return value;
 }
 
-function parsePort(value: string | undefined): number {
+function parsePort(value: Optional<string>): number {
   const port = Number(value);
   if (!Number.isInteger(port) || port < 1 || port > 65_535) {
     throw new Error('Invalid database configuration.');

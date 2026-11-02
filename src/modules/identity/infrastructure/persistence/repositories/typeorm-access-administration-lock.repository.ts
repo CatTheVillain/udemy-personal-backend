@@ -1,9 +1,9 @@
 import { EntityManager } from 'typeorm';
 
-import {
+import type {
   AccessAdministrationLockRepositoryPort,
   AccessMembershipLockResult,
-} from '../../../application/ports/identity.ports';
+} from '../../../application/interfaces/identity.ports';
 
 const CAPABILITY_ADMINISTRATION_ADVISORY_NAMESPACE = 734_111;
 const ADMINISTRATOR_MEMBERSHIP_LOCK = 5;
