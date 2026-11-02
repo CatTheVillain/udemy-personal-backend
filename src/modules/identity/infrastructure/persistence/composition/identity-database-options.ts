@@ -1,19 +1,19 @@
 import { DataSource, DataSourceOptions } from 'typeorm';
 import { TypeOrmModuleOptions } from '@nestjs/typeorm';
 
-import { SessionEntity } from '../../modules/identity/infrastructure/persistence/entities/session.entity';
-import { LoginThrottleEntity } from '../../modules/identity/infrastructure/persistence/entities/login-throttle.entity';
-import { RegistrationThrottleEntity } from '../../modules/identity/infrastructure/persistence/entities/registration-throttle.entity';
-import { UserEntity } from '../../modules/identity/infrastructure/persistence/entities/user.entity';
-import { AccessCapabilityEntity } from '../../modules/identity/infrastructure/persistence/entities/access-capability.entity';
-import { AccessChangeEntity } from '../../modules/identity/infrastructure/persistence/entities/access-change.entity';
-import { AccessCommandReceiptEntity } from '../../modules/identity/infrastructure/persistence/entities/access-command-receipt.entity';
-import { AddIdentityAccessAdministration1760832000000 } from '../../migrations/1760832000000-add-identity-access-administration';
-import { InitialIdentityPersistence1760194800000 } from '../../migrations/1760194800000-initial-identity-persistence';
-import { AddIdentityPersistenceInvariants1760194800001 } from '../../migrations/1760194800001-add-identity-persistence-invariants';
-import { AddIdentityThrottleKeyOwners1760270400000 } from '../../migrations/1760270400000-add-identity-throttle-key-owners';
-import { AddIdentityBootstrapRetentionIndex1760356800000 } from '../../migrations/1760356800000-add-identity-bootstrap-retention-index';
-import { AddIdentityThrottleRetentionIndexes1760443200000 } from '../../migrations/1760443200000-add-identity-throttle-retention-indexes';
+import { AccessCapabilityEntity } from '../entities/access-capability.entity';
+import { AccessChangeEntity } from '../entities/access-change.entity';
+import { AccessCommandReceiptEntity } from '../entities/access-command-receipt.entity';
+import { LoginThrottleEntity } from '../entities/login-throttle.entity';
+import { RegistrationThrottleEntity } from '../entities/registration-throttle.entity';
+import { SessionEntity } from '../entities/session.entity';
+import { UserEntity } from '../entities/user.entity';
+import { AddIdentityAccessAdministration1760832000000 } from '../../../../../migrations/1760832000000-add-identity-access-administration';
+import { InitialIdentityPersistence1760194800000 } from '../../../../../migrations/1760194800000-initial-identity-persistence';
+import { AddIdentityPersistenceInvariants1760194800001 } from '../../../../../migrations/1760194800001-add-identity-persistence-invariants';
+import { AddIdentityThrottleKeyOwners1760270400000 } from '../../../../../migrations/1760270400000-add-identity-throttle-key-owners';
+import { AddIdentityBootstrapRetentionIndex1760356800000 } from '../../../../../migrations/1760356800000-add-identity-bootstrap-retention-index';
+import { AddIdentityThrottleRetentionIndexes1760443200000 } from '../../../../../migrations/1760443200000-add-identity-throttle-retention-indexes';
 
 const POSTGRES_IDENTIFIER = /^[a-z_][a-z0-9_]{0,62}$/;
 

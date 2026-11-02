@@ -5,7 +5,7 @@ import { DataSource, QueryRunner } from 'typeorm';
 
 import { TypeOrmSessionRepository } from '../../src/modules/identity/infrastructure/persistence/repositories/typeorm-session.repository';
 import { SessionEntity } from '../../src/modules/identity/infrastructure/persistence/entities/session.entity';
-import { createIdentityDataSource } from '../../src/shared/database/identity-database-options';
+import { createIdentityDataSource } from '../../src/modules/identity/infrastructure/persistence/composition/identity-database-options';
 import {
   createIsolatedPostgresDatabaseOptions,
   createIsolatedPostgresEnvironment,

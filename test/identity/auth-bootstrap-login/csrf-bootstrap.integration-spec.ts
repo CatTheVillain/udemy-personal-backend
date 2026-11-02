@@ -11,7 +11,7 @@ import { CsrfBootstrapLimiter } from '../../../src/modules/identity/application/
 import { sha256Hex } from '../../../src/modules/identity/application/authentication/helpers/auth-secrets';
 import { SessionEntity } from '../../../src/modules/identity/infrastructure/persistence/entities/session.entity';
 import { TypeOrmSessionRepository } from '../../../src/modules/identity/infrastructure/persistence/repositories/typeorm-session.repository';
-import { createIdentityDataSource } from '../../../src/shared/database/identity-database-options';
+import { createIdentityDataSource } from '../../../src/modules/identity/infrastructure/persistence/composition/identity-database-options';
 import { configureApplication } from '../../../src/main';
 import {
   createIsolatedPostgresDatabaseOptions,

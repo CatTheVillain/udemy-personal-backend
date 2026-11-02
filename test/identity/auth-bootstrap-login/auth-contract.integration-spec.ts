@@ -7,7 +7,7 @@ import { NestFactory } from '@nestjs/core';
 import request from 'supertest';
 
 import { AppModule } from '../../../src/app.module';
-import { createIdentityDataSource } from '../../../src/shared/database/identity-database-options';
+import { createIdentityDataSource } from '../../../src/modules/identity/infrastructure/persistence/composition/identity-database-options';
 import { ApplicationOptions, configureApplication } from '../../../src/main';
 import {
   createIsolatedPostgresEnvironment,

@@ -3,8 +3,8 @@ import 'reflect-metadata';
 import { INestApplicationContext } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 
-import { decodeCanonicalCredential } from './modules/identity/application/access-administration-config';
-import { AccessAdministrationOutcome } from './modules/identity/application/access-administration.types';
+import { decodeCanonicalCredential } from './modules/identity/application/access-administration/config/access-administration-config';
+import { AccessAdministrationOutcome } from './modules/identity/application/access-administration/contracts/access-administration.contracts';
 import { AccessAdministrationOperatorAppModule } from './modules/identity/operator/access-administration-operator.module';
 import { AccessAdministrationOperatorEntrypoint } from './modules/identity/operator/access-administration-operator.service';
 import {

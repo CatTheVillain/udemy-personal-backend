@@ -4,20 +4,24 @@ import {
   AccessCommandReceipt,
   AccessPrincipal,
   AccessTransition,
-} from '../domain/access-administration.types';
-import { AccessCommandFingerprint } from './access-command-fingerprint';
+} from '../../../domain/access-administration.types';
+import { AccessCommandFingerprint } from '../helpers/access-command-fingerprint';
 import {
   AccessAdministrationCommand,
   AccessAdministrationOutcome,
   AccessReceiptReadRequest,
   OPERATOR_CREDENTIAL_VERIFIER_PORT,
   OperatorCredentialVerifierPort,
-} from './access-administration.types';
+} from '../contracts/access-administration.contracts';
+import {
+  AccessAuthorizationResult,
+  AccessReceiptLookupResult,
+} from '../contracts/access-administration-service.contracts';
 import {
   IDENTITY_TRANSACTION_PORT,
   IdentityTransactionPort,
   IdentityTransactionScope,
-} from './ports/identity.ports';
+} from '../../interfaces/identity.ports';
 
 @Injectable()
 export class IdentityAccessAdministrationService {
@@ -243,28 +247,6 @@ export class IdentityAccessAdministrationService {
     return { kind: 'present', outcome: toOutcome(receipt.outcomeCode) };
   }
 }
-
-interface AccessAuthorizationSuccess {
-  readonly principal: AccessPrincipal;
-}
-
-interface AccessAuthorizationFailure {
-  readonly outcome: AccessAdministrationOutcome;
-}
-
-type AccessAuthorizationResult = AccessAuthorizationSuccess | AccessAuthorizationFailure;
-
-interface AccessReceiptAbsent {
-  readonly kind: 'absent';
-  readonly outcome: AccessAdministrationOutcome;
-}
-
-interface AccessReceiptPresent {
-  readonly kind: 'present';
-  readonly outcome: AccessAdministrationOutcome;
-}
-
-type AccessReceiptLookupResult = AccessReceiptAbsent | AccessReceiptPresent;
 
 class AccessReceiptCollision extends Error {}
 

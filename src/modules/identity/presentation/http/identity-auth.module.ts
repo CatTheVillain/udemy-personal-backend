@@ -5,7 +5,7 @@ import { IdentityAuthenticationService } from '../../application/authentication/
 import { IDENTITY_CLOCK } from '../../application/authentication/contracts/identity-clock.contracts';
 import { SystemIdentityClock } from '../../application/authentication/services/identity-clock';
 import { ScryptPasswordHasher } from '../../application/credentials/services/password-hasher';
-import { IdentityPersistenceModule } from '../../infrastructure/persistence/identity-persistence.module';
+import { IdentityPersistenceModule } from '../../infrastructure/persistence/composition/identity-persistence.module';
 import { IdentityAuthController } from './controllers/identity-auth.controller';
 import { AuthenticatedCsrfGuard } from './guards/authenticated-csrf.guard';
 import { PreAuthCsrfGuard } from './guards/pre-auth-csrf.guard';

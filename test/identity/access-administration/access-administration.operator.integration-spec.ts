@@ -11,7 +11,7 @@ import { DataSource } from 'typeorm';
 import { AppModule } from '../../../src/app.module';
 import { UserEntity } from '../../../src/modules/identity/infrastructure/persistence/entities/user.entity';
 import { configureApplication } from '../../../src/main';
-import { createIdentityDataSource } from '../../../src/shared/database/identity-database-options';
+import { createIdentityDataSource } from '../../../src/modules/identity/infrastructure/persistence/composition/identity-database-options';
 import {
   assertStartedIsolatedPostgresRun,
   createIsolatedPostgresDatabaseOptions,

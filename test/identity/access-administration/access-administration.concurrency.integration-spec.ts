@@ -6,9 +6,9 @@ import { DataSource, QueryRunner } from 'typeorm';
 import {
   IdentityAccessAdministrationCredentialsConfig,
   OperatorCredentialPurpose,
-} from '../../../src/modules/identity/application/access-administration-config';
-import { IdentityAccessAdministrationService } from '../../../src/modules/identity/application/identity-access-administration.service';
-import { ConfigOperatorCredentialVerifier } from '../../../src/modules/identity/application/operator-credential-verifier';
+} from '../../../src/modules/identity/application/access-administration/config/access-administration-config';
+import { IdentityAccessAdministrationService } from '../../../src/modules/identity/application/access-administration/services/identity-access-administration.service';
+import { ConfigOperatorCredentialVerifier } from '../../../src/modules/identity/application/access-administration/services/operator-credential-verifier';
 import {
   IdentityTransactionPort,
   IdentityTransactionScope,
@@ -25,7 +25,7 @@ import { TypeOrmRegistrationThrottleRepository } from '../../../src/modules/iden
 import { TypeOrmSessionRepository } from '../../../src/modules/identity/infrastructure/persistence/repositories/typeorm-session.repository';
 import { TypeOrmUserRepository } from '../../../src/modules/identity/infrastructure/persistence/repositories/typeorm-user.repository';
 import { TypeOrmIdentityTransactionAdapter } from '../../../src/modules/identity/infrastructure/persistence/typeorm-identity-transaction.adapter';
-import { createIdentityDataSource } from '../../../src/shared/database/identity-database-options';
+import { createIdentityDataSource } from '../../../src/modules/identity/infrastructure/persistence/composition/identity-database-options';
 import {
   createIsolatedPostgresDatabaseOptions,
   createIsolatedPostgresEnvironment,
@@ -171,20 +171,34 @@ describe('Identity access-administration concurrency', () => {
     );
     const session = await insertSession(first, plan, administrator);
     const secondSession = await insertSession(first, plan, secondAdministrator);
-    const leftOperation = left.execute(ordinary(administrator, session, target, 'instructor'));
+    const leftCommand = ordinary(administrator, session, target, 'instructor');
+    const rightCommand = ordinary(secondAdministrator, secondSession, target, 'content_moderator');
+    const leftOperation = left.execute(leftCommand);
     await latch.reached;
-    const rightOperation = right.execute(
-      ordinary(secondAdministrator, secondSession, target, 'content_moderator'),
-    );
+    const rightOperation = right.execute(rightCommand);
     try {
       await waitForUserLockWait(first, plan);
       latch.release();
       const [instructor, moderator] = await Promise.all([leftOperation, rightOperation]);
-      expect([instructor.code, moderator.code]).toEqual(
+      const outcomes = [
+        { commandId: leftCommand.commandId, outcome: instructor },
+        { commandId: rightCommand.commandId, outcome: moderator },
+      ];
+      expect(outcomes.map(({ outcome }) => outcome.code)).toEqual(
         expect.arrayContaining([
           'access_administration_completed',
           'access_administration_conflict',
         ]),
+      );
+      const loser = outcomes.find(
+        ({ outcome }) => outcome.code === 'access_administration_conflict',
+      );
+      if (loser === undefined) throw new Error('Expected one conflicting command outcome.');
+      expect(
+        await countCommandRows(first, plan, 'identity_access_command_receipts', loser.commandId),
+      ).toBe(0);
+      expect(await countCommandRows(first, plan, 'identity_access_changes', loser.commandId)).toBe(
+        0,
       );
       expect(await activeCapabilities(first, plan, target)).toHaveLength(1);
       await expect(
@@ -255,6 +269,7 @@ describe('Identity access-administration concurrency', () => {
 
 type PausePoint = 'administrator-count' | 'user-locks';
 type OrdinaryCapability = 'instructor' | 'content_moderator' | 'administrator';
+type AccessCommandTable = 'identity_access_changes' | 'identity_access_command_receipts';
 
 interface AdministratorSession {
   readonly id: string;
@@ -480,6 +495,19 @@ async function count(
 ): Promise<number> {
   const rows = await source.query(
     `SELECT count(*)::int AS count FROM "${plan.schemaName}".${table}`,
+  );
+  return readNumber(rows, 'count');
+}
+
+async function countCommandRows(
+  source: DataSource,
+  plan: IsolatedPostgresPlan,
+  table: AccessCommandTable,
+  commandId: string,
+): Promise<number> {
+  const rows = await source.query(
+    `SELECT count(*)::int AS count FROM "${plan.schemaName}".${table} WHERE command_id = $1`,
+    [commandId],
   );
   return readNumber(rows, 'count');
 }

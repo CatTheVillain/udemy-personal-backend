@@ -3,11 +3,11 @@ import { OnModuleDestroy } from '@nestjs/common';
 import {
   OperatorCredentialVerifierPort,
   OperatorCredentialVerificationResult,
-} from './access-administration.types';
+} from '../contracts/access-administration.contracts';
 import {
   IdentityAccessAdministrationCredentialsConfig,
   OperatorCredentialPurpose,
-} from './access-administration-config';
+} from '../config/access-administration-config';
 
 export class ConfigOperatorCredentialVerifier
   implements OperatorCredentialVerifierPort, OnModuleDestroy

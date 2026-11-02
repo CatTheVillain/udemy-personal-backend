@@ -1,6 +1,6 @@
 import { parseArgs } from 'node:util';
 
-import { OperatorCredentialPurpose } from '../application/access-administration-config';
+import { OperatorCredentialPurpose } from '../application/access-administration/config/access-administration-config';
 
 export interface OperatorInvocationInput {
   readonly purpose: OperatorCredentialPurpose;
