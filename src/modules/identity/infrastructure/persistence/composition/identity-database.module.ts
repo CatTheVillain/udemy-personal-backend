@@ -12,4 +12,4 @@ import { createNestIdentityDatabaseOptions } from './identity-database-options';
     }),
   ],
 })
-export class DatabaseModule {}
+export class IdentityDatabaseModule {}

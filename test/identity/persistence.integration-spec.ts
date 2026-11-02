@@ -12,7 +12,7 @@ import {
 } from '../../src/modules/identity/domain/identity.types';
 import { UserEntity } from '../../src/modules/identity/infrastructure/persistence/entities/user.entity';
 import { TypeOrmIdentityTransactionAdapter } from '../../src/modules/identity/infrastructure/persistence/typeorm-identity-transaction.adapter';
-import { createIdentityDataSource } from '../../src/shared/database/identity-database-options';
+import { createIdentityDataSource } from '../../src/modules/identity/infrastructure/persistence/composition/identity-database-options';
 import {
   assertSafeCleanupScope,
   assertStartedIsolatedPostgresRun,

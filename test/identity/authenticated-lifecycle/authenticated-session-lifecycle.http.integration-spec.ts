@@ -7,16 +7,16 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import request, { Response } from 'supertest';
 import { DataSource } from 'typeorm';
 import { AppModule } from '../../../src/app.module';
-import { IdentityAccessAdministrationCredentialsConfig } from '../../../src/modules/identity/application/access-administration-config';
-import { IdentityAccessAdministrationService } from '../../../src/modules/identity/application/identity-access-administration.service';
-import { ConfigOperatorCredentialVerifier } from '../../../src/modules/identity/application/operator-credential-verifier';
+import { IdentityAccessAdministrationCredentialsConfig } from '../../../src/modules/identity/application/access-administration/config/access-administration-config';
+import { IdentityAccessAdministrationService } from '../../../src/modules/identity/application/access-administration/services/identity-access-administration.service';
+import { ConfigOperatorCredentialVerifier } from '../../../src/modules/identity/application/access-administration/services/operator-credential-verifier';
 import {
   IDENTITY_CLOCK,
   IdentityClock,
 } from '../../../src/modules/identity/application/authentication/contracts/identity-clock.contracts';
 import { SessionEntity } from '../../../src/modules/identity/infrastructure/persistence/entities/session.entity';
 import { TypeOrmIdentityTransactionAdapter } from '../../../src/modules/identity/infrastructure/persistence/typeorm-identity-transaction.adapter';
-import { createIdentityDataSource } from '../../../src/shared/database/identity-database-options';
+import { createIdentityDataSource } from '../../../src/modules/identity/infrastructure/persistence/composition/identity-database-options';
 import { ApplicationOptions, configureApplication } from '../../../src/main';
 import {
   createIsolatedPostgresDatabaseOptions,

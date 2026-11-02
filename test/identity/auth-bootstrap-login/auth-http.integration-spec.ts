@@ -19,7 +19,7 @@ import { LoginThrottleEntity } from '../../../src/modules/identity/infrastructur
 import { RegistrationThrottleEntity } from '../../../src/modules/identity/infrastructure/persistence/entities/registration-throttle.entity';
 import { SessionEntity } from '../../../src/modules/identity/infrastructure/persistence/entities/session.entity';
 import { UserEntity } from '../../../src/modules/identity/infrastructure/persistence/entities/user.entity';
-import { createIdentityDataSource } from '../../../src/shared/database/identity-database-options';
+import { createIdentityDataSource } from '../../../src/modules/identity/infrastructure/persistence/composition/identity-database-options';
 import { configureApplication } from '../../../src/main';
 import {
   createIsolatedPostgresDatabaseOptions,

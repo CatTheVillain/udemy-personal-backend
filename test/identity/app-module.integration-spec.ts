@@ -15,7 +15,7 @@ import {
 } from '../../src/modules/identity/application/ports/identity.ports';
 import { IDENTITY_TRANSACTION_PORT as CANONICAL_IDENTITY_TRANSACTION_PORT } from '../../src/modules/identity/application/interfaces/identity.ports';
 import { UserEntity } from '../../src/modules/identity/infrastructure/persistence/entities/user.entity';
-import { createIdentityDataSource } from '../../src/shared/database/identity-database-options';
+import { createIdentityDataSource } from '../../src/modules/identity/infrastructure/persistence/composition/identity-database-options';
 import { configureApplication } from '../../src/main';
 import {
   assertStartedIsolatedPostgresRun,

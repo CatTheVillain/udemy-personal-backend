@@ -3,7 +3,7 @@ import { randomBytes } from 'node:crypto';
 import {
   decodeCanonicalCredential,
   IdentityAccessAdministrationCredentialsConfig,
-} from './access-administration-config';
+} from '../config/access-administration-config';
 import { ConfigOperatorCredentialVerifier } from './operator-credential-verifier';
 
 describe('ConfigOperatorCredentialVerifier', () => {

@@ -6,7 +6,7 @@ import { DataSource } from 'typeorm';
 import {
   createIdentityDataSource,
   createIdentityDatabaseOptions,
-} from '../../../src/shared/database/identity-database-options';
+} from '../../../src/modules/identity/infrastructure/persistence/composition/identity-database-options';
 import {
   createIsolatedPostgresDatabaseOptions,
   createIsolatedPostgresEnvironment,

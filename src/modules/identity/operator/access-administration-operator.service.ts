@@ -1,8 +1,8 @@
 import { Injectable } from '@nestjs/common';
 
-import { IdentityAccessAdministrationService } from '../application/identity-access-administration.service';
-import { ConfigOperatorCredentialVerifier } from '../application/operator-credential-verifier';
-import { AccessAdministrationOutcome } from '../application/access-administration.types';
+import { AccessAdministrationOutcome } from '../application/access-administration/contracts/access-administration.contracts';
+import { IdentityAccessAdministrationService } from '../application/access-administration/services/identity-access-administration.service';
+import { ConfigOperatorCredentialVerifier } from '../application/access-administration/services/operator-credential-verifier';
 import { OperatorInvocationInput } from './operator-invocation-parser';
 
 @Injectable()

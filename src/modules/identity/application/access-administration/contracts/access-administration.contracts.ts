@@ -1,9 +1,9 @@
-import { OperatorCredentialPurpose } from './access-administration-config';
+import { OperatorCredentialPurpose } from '../config/access-administration-config';
 import {
   AccessAction,
   AccessCapability,
   AccessPrincipal,
-} from '../domain/access-administration.types';
+} from '../../../domain/access-administration.types';
 
 export interface AccessCommandDetails {
   readonly commandId: string;

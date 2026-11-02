@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 
-import { AccessPrincipal } from '../domain/access-administration.types';
-import { AccessCommandDetails } from './access-administration.types';
+import { AccessPrincipal } from '../../../domain/access-administration.types';
+import { AccessCommandDetails } from '../contracts/access-administration.contracts';
 
 const FINGERPRINT_VERSION = 'access-command-v1';
 

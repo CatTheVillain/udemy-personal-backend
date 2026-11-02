@@ -3,16 +3,16 @@ import { createServer } from 'node:net';
 
 import { DataSource, QueryRunner } from 'typeorm';
 
-import { IdentityAccessAdministrationCredentialsConfig } from '../../../src/modules/identity/application/access-administration-config';
-import { IdentityAccessAdministrationService } from '../../../src/modules/identity/application/identity-access-administration.service';
+import { IdentityAccessAdministrationCredentialsConfig } from '../../../src/modules/identity/application/access-administration/config/access-administration-config';
+import { IdentityAccessAdministrationService } from '../../../src/modules/identity/application/access-administration/services/identity-access-administration.service';
 import {
   IdentityTransactionPort,
   IdentityTransactionScope,
   IdentityTransactionWork,
 } from '../../../src/modules/identity/application/ports/identity.ports';
-import { ConfigOperatorCredentialVerifier } from '../../../src/modules/identity/application/operator-credential-verifier';
+import { ConfigOperatorCredentialVerifier } from '../../../src/modules/identity/application/access-administration/services/operator-credential-verifier';
 import { TypeOrmIdentityTransactionAdapter } from '../../../src/modules/identity/infrastructure/persistence/typeorm-identity-transaction.adapter';
-import { createIdentityDataSource } from '../../../src/shared/database/identity-database-options';
+import { createIdentityDataSource } from '../../../src/modules/identity/infrastructure/persistence/composition/identity-database-options';
 import {
   createIsolatedPostgresDatabaseOptions,
   createIsolatedPostgresEnvironment,

@@ -1,12 +1,12 @@
 import { Module } from '@nestjs/common';
 
 import { HelloController } from './modules/system/hello/hello.controller';
-import { IdentityPersistenceModule } from './modules/identity/infrastructure/persistence/identity-persistence.module';
+import { IdentityDatabaseModule } from './modules/identity/infrastructure/persistence/composition/identity-database.module';
+import { IdentityPersistenceModule } from './modules/identity/infrastructure/persistence/composition/identity-persistence.module';
 import { IdentityAuthModule } from './modules/identity/presentation/http/identity-auth.module';
-import { DatabaseModule } from './shared/database/database.module';
 
 @Module({
-  imports: [DatabaseModule, IdentityPersistenceModule, IdentityAuthModule],
+  imports: [IdentityDatabaseModule, IdentityPersistenceModule, IdentityAuthModule],
   controllers: [HelloController],
 })
 export class AppModule {}

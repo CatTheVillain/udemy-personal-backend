@@ -22,7 +22,7 @@ import { UserEntity } from '../../../src/modules/identity/infrastructure/persist
 import { TypeOrmLoginThrottleRepository } from '../../../src/modules/identity/infrastructure/persistence/repositories/typeorm-login-throttle.repository';
 import { TypeOrmRegistrationThrottleRepository } from '../../../src/modules/identity/infrastructure/persistence/repositories/typeorm-registration-throttle.repository';
 import { TypeOrmUserRepository } from '../../../src/modules/identity/infrastructure/persistence/repositories/typeorm-user.repository';
-import { createIdentityDataSource } from '../../../src/shared/database/identity-database-options';
+import { createIdentityDataSource } from '../../../src/modules/identity/infrastructure/persistence/composition/identity-database-options';
 import { configureApplication } from '../../../src/main';
 import {
   createIsolatedPostgresDatabaseOptions,
